@@ -5,10 +5,12 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import MainLayout from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
-import { Plus, Sprout, AlertTriangle, Loader2 } from 'lucide-react';
+import { Plus, Sprout, AlertTriangle, Loader2, Info, Eye } from 'lucide-react';
 import { toast } from 'sonner';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardFooter, CardDescription } from '@/components/ui/card';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
 type Crop = {
   id: string;
@@ -18,6 +20,10 @@ type Crop = {
   water_requirement: string;
   ideal_temperature: string;
   created_at: string;
+  planting_depth?: string;
+  spacing?: string;
+  sun_exposure?: string;
+  description?: string;
 };
 
 const CropsPage = () => {
@@ -28,36 +34,70 @@ const CropsPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [hasProfile, setHasProfile] = useState<boolean | null>(null);
   const [checkingProfile, setCheckingProfile] = useState(true);
+  const [selectedCrop, setSelectedCrop] = useState<Crop | null>(null);
 
   useEffect(() => {
     // First check if the farmer profile exists
     const checkFarmerProfile = async () => {
-      if (!user || !isAuthenticated || !isSupabaseConfigured()) {
+      if (!user || !isAuthenticated) {
         setCheckingProfile(false);
         return;
       }
 
       try {
-        const { data, error } = await supabase
-          .from('farmers')
-          .select('id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (error) {
-          console.error('Error checking farmer profile:', error);
-          setError('Error checking farmer profile');
-          setHasProfile(false);
-        } else {
-          // If data exists, the profile exists
-          setHasProfile(!!data);
-          
-          // If profile exists, fetch crops
-          if (data) {
-            fetchCrops();
-          } else {
+        // First check localStorage for a profile
+        const localProfile = localStorage.getItem('farmtrack_profile');
+        if (localProfile) {
+          try {
+            const parsedProfile = JSON.parse(localProfile);
+            console.log("Found profile in localStorage:", parsedProfile);
+            setHasProfile(true);
+            
+            // Try to fetch crops or create empty array if not available
+            const localCrops = localStorage.getItem('farmtrack_crops');
+            if (localCrops) {
+              setCrops(JSON.parse(localCrops));
+            } else {
+              // If no local crops, add some default crops for better user experience
+              const defaultCrops = getDefaultCrops();
+              localStorage.setItem('farmtrack_crops', JSON.stringify(defaultCrops));
+              setCrops(defaultCrops);
+            }
             setLoading(false);
+            setCheckingProfile(false);
+            return;
+          } catch (error) {
+            console.error('Error parsing localStorage profile:', error);
           }
+        }
+        
+        // If no local profile or failed to parse, check database if configured
+        if (isSupabaseConfigured()) {
+          const { data, error } = await supabase
+            .from('farmers')
+            .select('id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+          if (error) {
+            console.error('Error checking farmer profile:', error);
+            setError('Error checking farmer profile');
+            setHasProfile(false);
+          } else {
+            // If data exists, the profile exists
+            setHasProfile(!!data);
+            
+            // If profile exists, fetch crops
+            if (data) {
+              fetchCrops();
+            } else {
+              setLoading(false);
+            }
+          }
+        } else {
+          // If Supabase isn't configured and no local profile, set hasProfile to false
+          setHasProfile(false);
+          setLoading(false);
         }
       } catch (err) {
         console.error('Error in profile check:', err);
@@ -70,18 +110,31 @@ const CropsPage = () => {
 
     const fetchCrops = async () => {
       try {
-        const { data, error } = await supabase
-          .from('crops')
-          .select('*')
-          .order('created_at', { ascending: false });
+        if (isSupabaseConfigured()) {
+          const { data, error } = await supabase
+            .from('crops')
+            .select('*')
+            .order('created_at', { ascending: false });
 
-        if (error) {
-          console.error('Error fetching crops data:', error);
-          setError('Failed to load crops');
-          return;
+          if (error) {
+            console.error('Error fetching crops data:', error);
+            setError('Failed to load crops');
+            return;
+          }
+
+          setCrops(data || []);
+        } else {
+          // Try to fetch from local storage
+          const localCrops = localStorage.getItem('farmtrack_crops');
+          if (localCrops) {
+            setCrops(JSON.parse(localCrops));
+          } else {
+            // If no local crops, add some default crops for better user experience
+            const defaultCrops = getDefaultCrops();
+            localStorage.setItem('farmtrack_crops', JSON.stringify(defaultCrops));
+            setCrops(defaultCrops);
+          }
         }
-
-        setCrops(data || []);
       } catch (err) {
         console.error('Error in crops fetch:', err);
         setError('Failed to load crops');
@@ -93,9 +146,57 @@ const CropsPage = () => {
     checkFarmerProfile();
   }, [user, isAuthenticated]);
 
+  const getDefaultCrops = (): Crop[] => {
+    return [
+      {
+        id: crypto.randomUUID(),
+        name: 'Corn',
+        variety: 'Sweet Corn',
+        growth_period_days: 70,
+        water_requirement: 'Medium',
+        ideal_temperature: '15-30°C',
+        created_at: new Date().toISOString(),
+        planting_depth: '2-3 inches',
+        spacing: '9-12 inches',
+        sun_exposure: 'Full sun',
+        description: 'Sweet corn is a variety of maize with a high sugar content. Sweet corn is the result of a naturally occurring recessive mutation in the genes which control conversion of sugar to starch inside the endosperm of the corn kernel.'
+      },
+      {
+        id: crypto.randomUUID(),
+        name: 'Tomato',
+        variety: 'Roma',
+        growth_period_days: 80,
+        water_requirement: 'Medium-High',
+        ideal_temperature: '18-29°C',
+        created_at: new Date().toISOString(),
+        planting_depth: '1/4 inch',
+        spacing: '24-36 inches',
+        sun_exposure: 'Full sun',
+        description: 'Roma tomatoes are a paste tomato cultivar. They have fewer seeds and are generally more dense than other tomato varieties, making them ideal for sauces and canning.'
+      },
+      {
+        id: crypto.randomUUID(),
+        name: 'Lettuce',
+        variety: 'Romaine',
+        growth_period_days: 45,
+        water_requirement: 'High',
+        ideal_temperature: '10-20°C',
+        created_at: new Date().toISOString(),
+        planting_depth: '1/4 inch',
+        spacing: '6-8 inches',
+        sun_exposure: 'Partial shade to full sun',
+        description: 'Romaine lettuce is a variety of lettuce that grows in a tall head of sturdy dark green leaves with firm ribs down their centers. It has a robust flavor and is very nutritious.'
+      }
+    ];
+  };
+  
   const handleCreateProfile = () => {
     navigate('/profile');
     toast.info('Please create your profile first');
+  };
+
+  const viewCropDetails = (crop: Crop) => {
+    setSelectedCrop(crop);
   };
 
   return (
@@ -164,16 +265,17 @@ const CropsPage = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {crops.map((crop) => (
-              <Card key={crop.id} className="overflow-hidden">
+              <Card key={crop.id} className="overflow-hidden flex flex-col">
                 <CardHeader className="bg-amber-50">
-                  <CardTitle className="text-lg">{crop.name}</CardTitle>
+                  <div className="flex justify-between items-center">
+                    <CardTitle className="text-lg">{crop.name}</CardTitle>
+                    <Badge variant="outline" className="bg-amber-100 text-amber-800 hover:bg-amber-200">
+                      {crop.variety}
+                    </Badge>
+                  </div>
                 </CardHeader>
-                <CardContent className="pt-4">
+                <CardContent className="pt-4 flex-grow">
                   <dl className="space-y-2">
-                    <div className="flex justify-between">
-                      <dt className="font-medium text-gray-500">Variety:</dt>
-                      <dd>{crop.variety}</dd>
-                    </div>
                     <div className="flex justify-between">
                       <dt className="font-medium text-gray-500">Growth Period:</dt>
                       <dd>{crop.growth_period_days} days</dd>
@@ -188,6 +290,81 @@ const CropsPage = () => {
                     </div>
                   </dl>
                 </CardContent>
+                <CardFooter className="pt-2 pb-4 flex justify-end">
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <Button 
+                        variant="outline" 
+                        className="text-amber-600 border-amber-200 hover:bg-amber-50"
+                        onClick={() => viewCropDetails(crop)}
+                      >
+                        <Eye className="mr-2 h-4 w-4" />
+                        View Details
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-md">
+                      <DialogHeader>
+                        <DialogTitle className="flex items-center">
+                          <Sprout className="h-5 w-5 mr-2 text-amber-600" />
+                          {selectedCrop?.name} - {selectedCrop?.variety}
+                        </DialogTitle>
+                        <DialogDescription>
+                          Complete information about this crop variety
+                        </DialogDescription>
+                      </DialogHeader>
+                      {selectedCrop && (
+                        <div className="space-y-4 mt-4">
+                          {selectedCrop.description && (
+                            <div className="text-sm bg-amber-50 p-3 rounded-md">
+                              <p className="italic">{selectedCrop.description}</p>
+                            </div>
+                          )}
+                          
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                            <div>
+                              <h4 className="text-sm font-semibold text-gray-500">Growth Period</h4>
+                              <p>{selectedCrop.growth_period_days} days</p>
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-semibold text-gray-500">Water Requirement</h4>
+                              <p>{selectedCrop.water_requirement}</p>
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-semibold text-gray-500">Ideal Temperature</h4>
+                              <p>{selectedCrop.ideal_temperature}</p>
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-semibold text-gray-500">Sun Exposure</h4>
+                              <p>{selectedCrop.sun_exposure || 'Not specified'}</p>
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-semibold text-gray-500">Planting Depth</h4>
+                              <p>{selectedCrop.planting_depth || 'Not specified'}</p>
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-semibold text-gray-500">Plant Spacing</h4>
+                              <p>{selectedCrop.spacing || 'Not specified'}</p>
+                            </div>
+                          </div>
+                          
+                          <div className="mt-4 pt-3 border-t border-gray-100">
+                            <Alert variant="outline" className="bg-blue-50">
+                              <Info className="h-4 w-4 text-blue-500" />
+                              <AlertTitle className="text-blue-700">Planting Tip</AlertTitle>
+                              <AlertDescription className="text-blue-600 text-sm">
+                                {selectedCrop.name === 'Corn' 
+                                  ? 'For best pollination, plant corn in blocks rather than single rows.'
+                                  : selectedCrop.name === 'Tomato'
+                                  ? 'Remove the bottom leaves and plant tomatoes deep - they\'ll develop roots along the buried stem.'
+                                  : 'Consider succession planting every 2-3 weeks for a continuous harvest.'}
+                              </AlertDescription>
+                            </Alert>
+                          </div>
+                        </div>
+                      )}
+                    </DialogContent>
+                  </Dialog>
+                </CardFooter>
               </Card>
             ))}
           </div>
