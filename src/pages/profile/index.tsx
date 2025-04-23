@@ -12,10 +12,12 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 interface FarmerProfile {
   id: string;
+  created_at: string;
+  user_id: string;
   name: string;
-  email: string;
   contact_number: string;
   address: string;
+  email: string;
 }
 
 const ProfilePage = () => {
@@ -39,6 +41,7 @@ const ProfilePage = () => {
       }
       
       try {
+        console.log("Fetching profile for user:", user.id);
         const { data, error } = await supabase
           .from('farmers')
           .select('*')
@@ -51,6 +54,7 @@ const ProfilePage = () => {
         }
         
         if (data) {
+          console.log("Profile found:", data);
           setFarmerProfile(data);
           setFormData({
             name: data.name || '',
@@ -60,7 +64,8 @@ const ProfilePage = () => {
           });
         } else {
           // No profile exists, try to create one
-          createDefaultProfile();
+          console.log("No profile found, creating default profile");
+          await createDefaultProfile();
         }
       } catch (error) {
         console.error('Profile fetch error:', error);
@@ -73,24 +78,29 @@ const ProfilePage = () => {
       if (!user) return;
       
       try {
+        const userData = {
+          user_id: user.id,
+          name: user.user_metadata?.full_name || 'Farmer',
+          email: user.email || '',
+          contact_number: user.user_metadata?.phone || '',
+          address: ''
+        };
+        
+        console.log("Creating default profile with data:", userData);
         const { data, error } = await supabase
           .from('farmers')
-          .insert({
-            user_id: user.id,
-            name: user.user_metadata?.full_name || 'Farmer',
-            email: user.email || '',
-            contact_number: user.user_metadata?.phone || '',
-            address: ''
-          })
+          .insert(userData)
           .select()
           .single();
           
         if (error) {
           console.error('Error creating farmer profile:', error);
+          toast.error('Failed to create profile. Please try again.');
           return;
         }
         
         if (data) {
+          console.log("Default profile created:", data);
           setFarmerProfile(data);
           setFormData({
             name: data.name,
@@ -102,6 +112,7 @@ const ProfilePage = () => {
         }
       } catch (error) {
         console.error('Profile creation error:', error);
+        toast.error('An unexpected error occurred');
       }
     };
     
@@ -132,9 +143,16 @@ const ProfilePage = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!validate() || !farmerProfile) return;
+    if (!validate()) return;
+    
+    if (!farmerProfile) {
+      console.log("No farmer profile to update, creating new profile");
+      await createDefaultProfile();
+      return;
+    }
     
     setIsSubmitting(true);
+    console.log("Updating profile:", farmerProfile.id, formData);
     
     try {
       const { error } = await supabase
@@ -147,12 +165,55 @@ const ProfilePage = () => {
         })
         .eq('id', farmerProfile.id);
         
-      if (error) throw new Error(error.message);
-      
-      toast.success('Profile updated successfully');
+      if (error) {
+        console.error('Error updating profile:', error);
+        toast.error('Failed to update profile: ' + error.message);
+      } else {
+        console.log("Profile updated successfully");
+        toast.success('Profile updated successfully');
+      }
     } catch (error: any) {
       console.error('Error updating profile:', error);
       toast.error('Failed to update profile');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const createDefaultProfile = async () => {
+    if (!user) return;
+    
+    setIsSubmitting(true);
+    try {
+      const userData = {
+        user_id: user.id,
+        name: formData.name || user.user_metadata?.full_name || 'Farmer',
+        email: formData.email || user.email || '',
+        contact_number: formData.contact_number || user.user_metadata?.phone || '',
+        address: formData.address || ''
+      };
+      
+      console.log("Creating profile with data:", userData);
+      const { data, error } = await supabase
+        .from('farmers')
+        .insert(userData)
+        .select()
+        .single();
+        
+      if (error) {
+        console.error('Error creating farmer profile:', error);
+        toast.error('Failed to create profile: ' + error.message);
+        return;
+      }
+      
+      if (data) {
+        console.log("Profile created:", data);
+        setFarmerProfile(data);
+        toast.success('Profile created successfully');
+      }
+    } catch (error: any) {
+      console.error('Profile creation error:', error);
+      toast.error('Failed to create profile');
     } finally {
       setIsSubmitting(false);
     }

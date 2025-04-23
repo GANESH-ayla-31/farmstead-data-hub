@@ -15,6 +15,10 @@ import CropsPage from "./pages/crops";
 import NewCropPage from "./pages/crops/new";
 import ProfilePage from "./pages/profile";
 import CalendarPage from "./pages/calendar";
+import ResourcesPage from "./pages/resources";
+import WeatherPage from "./pages/weather";
+import MarketPage from "./pages/market";
+import SettingsPage from "./pages/settings";
 
 const queryClient = new QueryClient();
 
@@ -43,6 +47,12 @@ const App = () => (
             
             {/* Calendar Route */}
             <Route path="/calendar" element={<CalendarPage />} />
+            
+            {/* New Routes */}
+            <Route path="/resources" element={<ResourcesPage />} />
+            <Route path="/weather" element={<WeatherPage />} />
+            <Route path="/market" element={<MarketPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
             
             {/* Profile Routes */}
             <Route path="/profile" element={<ProfilePage />} />
