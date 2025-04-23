@@ -12,7 +12,7 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const { signIn } = useAuth();
+  const { signIn, isConfigured } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -45,6 +45,11 @@ const Login = () => {
           <div className="bg-amber-100 text-amber-800 p-3 rounded-md text-sm mt-4">
             <strong>Test Login:</strong> Use email: test@example.com and password: password123
           </div>
+          {!isConfigured && (
+            <div className="bg-red-100 text-red-800 p-3 rounded-md text-sm mt-2">
+              <strong>Warning:</strong> Supabase is not properly configured. Some features may not work correctly.
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">

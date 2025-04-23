@@ -13,7 +13,7 @@ const Register = () => {
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const { signUp } = useAuth();
+  const { signUp, isConfigured } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -43,6 +43,11 @@ const Register = () => {
           <CardDescription>
             Sign up to start managing your farm efficiently
           </CardDescription>
+          {!isConfigured && (
+            <div className="bg-red-100 text-red-800 p-3 rounded-md text-sm mt-2">
+              <strong>Warning:</strong> Supabase is not properly configured. Some features may not work correctly.
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">

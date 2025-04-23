@@ -1,6 +1,7 @@
+
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import MainLayout from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
@@ -14,8 +15,9 @@ import {
   SelectValue, 
 } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { ArrowLeft } from 'lucide-react';
+import { AlertCircle, ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const SOIL_TYPES = [
   'Clay',
@@ -31,7 +33,7 @@ const SOIL_TYPES = [
 ];
 
 const NewFarmlandPage = () => {
-  const { user } = useAuth();
+  const { user, isConfigured } = useAuth();
   const navigate = useNavigate();
   
   const [name, setName] = useState('');
@@ -40,6 +42,7 @@ const NewFarmlandPage = () => {
   const [soilType, setSoilType] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [farmerError, setFarmerError] = useState<string | null>(null);
 
   const validate = () => {
     const newErrors: Record<string, string> = {};
@@ -60,8 +63,15 @@ const NewFarmlandPage = () => {
     if (!validate() || !user) return;
     
     setIsSubmitting(true);
+    setFarmerError(null);
     
     try {
+      if (!isConfigured) {
+        throw new Error("Supabase is not properly configured");
+      }
+
+      console.log("Getting farmer ID for user:", user.id);
+      
       // First get the farmer ID
       const { data: farmerData, error: farmerError } = await supabase
         .from('farmers')
@@ -75,29 +85,65 @@ const NewFarmlandPage = () => {
       }
 
       if (!farmerData) {
-        console.error('No farmer found for this user');
-        throw new Error('Could not find farmer profile');
-      }
+        console.error('No farmer found for this user, attempting to create one');
+        // Try to create a farmer profile
+        const { data: newFarmer, error: createError } = await supabase
+          .from('farmers')
+          .insert({
+            user_id: user.id,
+            name: user.name || 'New Farmer',
+            email: user.email,
+            contact_number: '000-000-0000', // Default
+            address: 'No address provided', // Default
+          })
+          .select('id')
+          .single();
+          
+        if (createError) {
+          console.error('Error creating farmer:', createError);
+          throw new Error('Could not create farmer profile');
+        }
+        
+        console.log('Created new farmer profile:', newFarmer);
+        
+        // Insert the new farmland with the newly created farmer id
+        const { error } = await supabase
+          .from('farmlands')
+          .insert({
+            farmer_id: newFarmer.id,
+            name,
+            location,
+            size_hectares: parseFloat(size),
+            soil_type: soilType,
+          });
 
-      // Insert the new farmland
-      const { error } = await supabase
-        .from('farmlands')
-        .insert({
-          farmer_id: farmerData.id,
-          name,
-          location,
-          size_hectares: parseFloat(size),
-          soil_type: soilType,
-        });
+        if (error) {
+          throw error;
+        }
+      } else {
+        console.log('Found existing farmer profile:', farmerData);
+        
+        // Insert the new farmland with the existing farmer id
+        const { error } = await supabase
+          .from('farmlands')
+          .insert({
+            farmer_id: farmerData.id,
+            name,
+            location,
+            size_hectares: parseFloat(size),
+            soil_type: soilType,
+          });
 
-      if (error) {
-        throw error;
+        if (error) {
+          throw error;
+        }
       }
 
       toast.success('Farmland added successfully');
       navigate('/farmlands');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding farmland:', error);
+      setFarmerError(error.message || 'Failed to add farmland');
       toast.error('Failed to add farmland');
     } finally {
       setIsSubmitting(false);
@@ -118,6 +164,24 @@ const NewFarmlandPage = () => {
             <p className="text-muted-foreground">Register a new farmland property</p>
           </div>
         </div>
+
+        {!isConfigured && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Warning</AlertTitle>
+            <AlertDescription>
+              Supabase is not properly configured. Your data will not be saved to the database.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {farmerError && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Error</AlertTitle>
+            <AlertDescription>{farmerError}</AlertDescription>
+          </Alert>
+        )}
 
         <Card>
           <CardHeader>
