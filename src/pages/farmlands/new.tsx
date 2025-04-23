@@ -1,7 +1,6 @@
-
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import MainLayout from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
@@ -43,6 +42,54 @@ const NewFarmlandPage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [farmerError, setFarmerError] = useState<string | null>(null);
+  const [farmerId, setFarmerId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const getFarmerId = async () => {
+      if (!user || !isConfigured) return;
+      
+      try {
+        const { data: farmerData, error } = await supabase
+          .from('farmers')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        
+        if (error) {
+          console.error('Error getting farmer ID:', error);
+          return;
+        }
+        
+        if (farmerData) {
+          setFarmerId(farmerData.id);
+          console.log('Found farmer ID:', farmerData.id);
+        } else {
+          console.log('No farmer found, attempting to create via RPC');
+          const { data: newFarmer, error: rpcError } = await supabase.rpc('create_farmer', {
+            p_user_id: user.id,
+            p_name: user.name || 'New Farmer',
+            p_email: user.email,
+            p_contact_number: '000-000-0000',
+            p_address: 'No address provided'
+          });
+          
+          if (rpcError) {
+            console.error('Error creating farmer via RPC:', rpcError);
+            setFarmerError('Could not create farmer profile: ' + rpcError.message);
+            return;
+          }
+          
+          setFarmerId(newFarmer);
+          console.log('Created new farmer with ID:', newFarmer);
+        }
+      } catch (error: any) {
+        console.error('Error in farmer ID retrieval:', error);
+        setFarmerError(error.message || 'Failed to get farmer profile');
+      }
+    };
+    
+    getFarmerId();
+  }, [user, isConfigured]);
 
   const validate = () => {
     const newErrors: Record<string, string> = {};
@@ -61,6 +108,10 @@ const NewFarmlandPage = () => {
     e.preventDefault();
     
     if (!validate() || !user) return;
+    if (!farmerId) {
+      setFarmerError('No farmer profile found. Please try logging out and back in.');
+      return;
+    }
     
     setIsSubmitting(true);
     setFarmerError(null);
@@ -69,74 +120,21 @@ const NewFarmlandPage = () => {
       if (!isConfigured) {
         throw new Error("Supabase is not properly configured");
       }
-
-      console.log("Getting farmer ID for user:", user.id);
       
-      // First get the farmer ID
-      const { data: farmerData, error: farmerError } = await supabase
-        .from('farmers')
-        .select('id')
-        .eq('user_id', user.id)
-        .maybeSingle();
+      console.log('Adding farmland for farmer ID:', farmerId);
+      
+      const { error } = await supabase
+        .from('farmlands')
+        .insert({
+          farmer_id: farmerId,
+          name,
+          location,
+          size_hectares: parseFloat(size),
+          soil_type: soilType,
+        });
 
-      if (farmerError) {
-        console.error('Error fetching farmer:', farmerError);
-        throw new Error('Could not find farmer profile');
-      }
-
-      if (!farmerData) {
-        console.error('No farmer found for this user, attempting to create one');
-        // Try to create a farmer profile
-        const { data: newFarmer, error: createError } = await supabase
-          .from('farmers')
-          .insert({
-            user_id: user.id,
-            name: user.name || 'New Farmer',
-            email: user.email,
-            contact_number: '000-000-0000', // Default
-            address: 'No address provided', // Default
-          })
-          .select('id')
-          .single();
-          
-        if (createError) {
-          console.error('Error creating farmer:', createError);
-          throw new Error('Could not create farmer profile');
-        }
-        
-        console.log('Created new farmer profile:', newFarmer);
-        
-        // Insert the new farmland with the newly created farmer id
-        const { error } = await supabase
-          .from('farmlands')
-          .insert({
-            farmer_id: newFarmer.id,
-            name,
-            location,
-            size_hectares: parseFloat(size),
-            soil_type: soilType,
-          });
-
-        if (error) {
-          throw error;
-        }
-      } else {
-        console.log('Found existing farmer profile:', farmerData);
-        
-        // Insert the new farmland with the existing farmer id
-        const { error } = await supabase
-          .from('farmlands')
-          .insert({
-            farmer_id: farmerData.id,
-            name,
-            location,
-            size_hectares: parseFloat(size),
-            soil_type: soilType,
-          });
-
-        if (error) {
-          throw error;
-        }
+      if (error) {
+        throw error;
       }
 
       toast.success('Farmland added successfully');

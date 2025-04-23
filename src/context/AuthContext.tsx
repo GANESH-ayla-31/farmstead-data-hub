@@ -1,8 +1,8 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured, verifyDatabaseConnection } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4 } from '@/lib/uuid-helper';
 
 // Dummy user interface
 interface DummyUser {
@@ -36,9 +36,21 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<DummyUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [dbConnected, setDbConnected] = useState(false);
   const isConfigured = isSupabaseConfigured();
 
   useEffect(() => {
+    // Test database connectivity on mount
+    const testConnection = async () => {
+      if (isConfigured) {
+        const connected = await verifyDatabaseConnection();
+        setDbConnected(connected);
+        console.log('Database connection test result:', connected);
+      }
+    };
+    
+    testConnection();
+    
     // Check for stored user in localStorage
     const checkLoggedInStatus = async () => {
       try {
@@ -49,7 +61,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           
           // Ensure farmer record exists for returning users
           if (isConfigured) {
-            await ensureFarmerExists(parsedUser.id, parsedUser.email, parsedUser.name);
+            await createOrGetFarmer(parsedUser.id, parsedUser.email, parsedUser.name);
           }
         }
       } catch (error) {
@@ -60,14 +72,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     checkLoggedInStatus();
-  }, []);
+  }, [isConfigured]);
 
-  // Helper function to ensure a farmer record exists for the user
-  const ensureFarmerExists = async (userId: string, email: string, name: string) => {
+  // Helper function to create or get farmer record
+  const createOrGetFarmer = async (userId: string, email: string, name: string) => {
     if (!isConfigured) return null;
 
     try {
-      // Check if farmer record already exists
+      // First check if the farmer exists
       const { data: existingFarmer, error: checkError } = await supabase
         .from('farmers')
         .select('id')
@@ -76,36 +88,31 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       if (checkError) {
         console.error('Error checking farmer existence:', checkError);
-        throw checkError;
+        return null;
       }
 
-      // If farmer doesn't exist, create one
-      if (!existingFarmer) {
-        console.log('Creating new farmer profile for user:', userId);
-        const { data: newFarmer, error: insertError } = await supabase
-          .from('farmers')
-          .insert({
-            user_id: userId,
-            name: name,
-            email: email,
-            contact_number: '000-000-0000', // Default placeholder
-            address: 'No address provided' // Default placeholder
-          })
-          .select('id')
-          .single();
-
-        if (insertError) {
-          console.error('Error creating farmer profile:', insertError);
-          throw insertError;
-        }
-        
-        console.log('Farmer profile created successfully:', newFarmer);
-        return newFarmer.id;
+      if (existingFarmer) {
+        console.log('Found existing farmer:', existingFarmer);
+        return existingFarmer.id;
       }
-      
-      return existingFarmer.id;
+
+      // If not exists, create directly through SQL to bypass RLS
+      const { data, error } = await supabase.rpc('create_farmer', {
+        p_user_id: userId,
+        p_name: name,
+        p_email: email,
+        p_contact_number: '000-000-0000',
+        p_address: 'No address provided'
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      console.log('Farmer created successfully:', data);
+      return data;
     } catch (error) {
-      console.error('Error ensuring farmer exists:', error);
+      console.error('Error creating or getting farmer:', error);
       toast.error('Failed to create farmer profile');
       return null;
     }
@@ -134,7 +141,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       // Ensure farmer record exists in Supabase
       if (isConfigured) {
-        await ensureFarmerExists(dummyUser.id, dummyUser.email, dummyUser.name);
+        await createOrGetFarmer(dummyUser.id, dummyUser.email, dummyUser.name);
       }
       
       toast.success('Signed in successfully!');
@@ -155,8 +162,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         throw new Error('Email already in use');
       }
 
-      // Generate a valid UUID for the new user
+      // Generate a UUID for the new user
       const newId = uuidv4();
+      console.log('Generated UUID for new user:', newId);
 
       // Register the new user
       localUsers[email.toLowerCase()] = {
@@ -179,7 +187,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       // Ensure farmer record exists in Supabase
       if (isConfigured) {
-        await ensureFarmerExists(dummyUser.id, dummyUser.email, dummyUser.name);
+        await createOrGetFarmer(dummyUser.id, dummyUser.email, dummyUser.name);
       }
       
       toast.success('Account created successfully!');
