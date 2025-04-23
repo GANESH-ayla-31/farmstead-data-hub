@@ -9,11 +9,16 @@ interface DummyUser {
   id: string;
   email: string;
   name: string;
+  user_metadata?: {
+    full_name?: string;
+    phone?: string;
+  };
 }
 
 interface AuthContextType {
   user: DummyUser | null;
   loading: boolean;
+  isAuthenticated: boolean; // Added this property
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, name: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -38,6 +43,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const [dbConnected, setDbConnected] = useState(false);
   const isConfigured = isSupabaseConfigured();
+  const isAuthenticated = Boolean(user); // Added this property
 
   useEffect(() => {
     // Test database connectivity on mount
@@ -57,6 +63,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const storedUser = localStorage.getItem('farmtrack_user');
         if (storedUser) {
           const parsedUser = JSON.parse(storedUser);
+          // Add user_metadata property if not present
+          if (!parsedUser.user_metadata) {
+            parsedUser.user_metadata = {
+              full_name: parsedUser.name,
+              phone: ''
+            };
+          }
           setUser(parsedUser);
         }
       } catch (error) {
@@ -79,11 +92,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         throw new Error('Invalid email or password');
       }
 
-      // Create a dummy user object
+      // Create a dummy user object with user_metadata
       const dummyUser = {
         id: userRecord.id,
         email: userRecord.email,
-        name: userRecord.name
+        name: userRecord.name,
+        user_metadata: {
+          full_name: userRecord.name,
+          phone: ''
+        }
       };
 
       // Store in localStorage for persistence
@@ -120,11 +137,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         name
       };
 
-      // Create a dummy user object
+      // Create a dummy user object with user_metadata
       const dummyUser = {
         id: newId,
         email: email.toLowerCase(),
-        name
+        name,
+        user_metadata: {
+          full_name: name,
+          phone: ''
+        }
       };
 
       // Store in localStorage for persistence
@@ -154,7 +175,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signUp, signOut, isConfigured }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      loading, 
+      signIn, 
+      signUp, 
+      signOut, 
+      isConfigured,
+      isAuthenticated 
+    }}>
       {children}
     </AuthContext.Provider>
   );

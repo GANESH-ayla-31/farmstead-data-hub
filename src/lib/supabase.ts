@@ -35,3 +35,26 @@ export const isSupabaseConfigured = () => {
     supabaseKey.length > 10
   );
 };
+
+// Function to verify the database connection works
+export const verifyDatabaseConnection = async (): Promise<boolean> => {
+  try {
+    // Simple query to test if we can connect to the database
+    const { data, error } = await supabase
+      .from('farmers')
+      .select('id')
+      .limit(1);
+    
+    // If there's no error, the connection works
+    if (!error) {
+      console.log('Database connection successful');
+      return true;
+    } else {
+      console.error('Database connection failed:', error.message);
+      return false;
+    }
+  } catch (error) {
+    console.error('Error checking database connection:', error);
+    return false;
+  }
+};
