@@ -45,64 +45,115 @@ const NewFarmlandPage = () => {
   const [farmerId, setFarmerId] = useState<string | null>(null);
   const [farmerError, setFarmerError] = useState<string | null>(null);
   const [isCreatingFarmer, setIsCreatingFarmer] = useState(false);
+  const [usingLocalStorage, setUsingLocalStorage] = useState(false);
 
   useEffect(() => {
-    const createFarmerProfile = async () => {
-      if (!user || !isAuthenticated || !isSupabaseConfigured()) return;
-      
+    const getFarmerProfile = async () => {
+      if (!user || !isAuthenticated) return;
+
       try {
-        // Check if farmer profile exists
-        const { data: existingFarmer, error: checkError } = await supabase
-          .from('farmers')
-          .select('id')
-          .eq('user_id', user.id)
-          .maybeSingle();
+        // First check localStorage for a profile
+        const localProfile = localStorage.getItem('farmtrack_profile');
+        if (localProfile) {
+          try {
+            const parsedProfile = JSON.parse(localProfile);
+            console.log("Found profile in localStorage:", parsedProfile);
+            setFarmerId(parsedProfile.id);
+            setUsingLocalStorage(true);
+            return;
+          } catch (error) {
+            console.error('Error parsing localStorage profile:', error);
+          }
+        }
+        
+        // If no local profile or failed to parse, check database if configured
+        if (isSupabaseConfigured()) {
+          // Check if farmer profile exists
+          const { data: existingFarmer, error: checkError } = await supabase
+            .from('farmers')
+            .select('id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+            
+          if (checkError) {
+            console.error('Error checking for farmer profile:', checkError);
+            setFarmerError('Error checking for farmer profile. Please refresh and try again.');
+            return;
+          }
           
-        if (checkError) {
-          console.error('Error checking for farmer profile:', checkError);
-          setFarmerError('Error checking for farmer profile. Please refresh and try again.');
-          return;
-        }
-        
-        // If farmer exists, store ID and return
-        if (existingFarmer) {
-          setFarmerId(existingFarmer.id);
-          return;
-        }
-        
-        // If no farmer profile exists, create one
-        setIsCreatingFarmer(true);
-        
-        // Create farmer profile with user's basic info
-        const { data: newFarmer, error: createError } = await supabase
-          .from('farmers')
-          .insert({
-            user_id: user.id,
-            name: user.user_metadata?.full_name || 'Farmer',
-            email: user.email || '',
-            contact_number: user.user_metadata?.phone || '',
-            address: ''
-          })
-          .select('id')
-          .single();
+          // If farmer exists, store ID and return
+          if (existingFarmer) {
+            setFarmerId(existingFarmer.id);
+            return;
+          }
           
-        if (createError) {
-          console.error('Error creating farmer profile:', createError);
-          setFarmerError('Could not create farmer profile. Please try again later.');
-          return;
+          // If no farmer profile exists, create one
+          setIsCreatingFarmer(true);
+          
+          // Create farmer profile with user's basic info
+          const { data: newFarmer, error: createError } = await supabase
+            .from('farmers')
+            .insert({
+              user_id: user.id,
+              name: user.user_metadata?.full_name || 'Farmer',
+              email: user.email || '',
+              contact_number: user.user_metadata?.phone || '',
+              address: ''
+            })
+            .select('id')
+            .single();
+            
+          if (createError) {
+            console.error('Error creating farmer profile:', createError);
+            setFarmerError('Could not create farmer profile. Creating a local profile instead.');
+            await createLocalProfile();
+            return;
+          }
+          
+          setFarmerId(newFarmer.id);
+          toast.success('Farmer profile created successfully');
+        } else {
+          // If Supabase isn't configured, just use localStorage
+          await createLocalProfile();
         }
-        
-        setFarmerId(newFarmer.id);
-        toast.success('Farmer profile created successfully');
       } catch (error) {
-        console.error('Error in farmer profile creation:', error);
-        setFarmerError('An unexpected error occurred. Please try again later.');
+        console.error('Error in farmer profile operation:', error);
+        setFarmerError('An unexpected error occurred. Creating a local profile instead.');
+        await createLocalProfile();
       } finally {
         setIsCreatingFarmer(false);
       }
     };
     
-    createFarmerProfile();
+    const createLocalProfile = async () => {
+      if (!user) return;
+      
+      try {
+        const userData = {
+          id: crypto.randomUUID(),
+          user_id: user.id,
+          name: user.user_metadata?.full_name || 'Farmer',
+          email: user.email || '',
+          contact_number: user.user_metadata?.phone || '',
+          address: '',
+          created_at: new Date().toISOString()
+        };
+        
+        console.log("Creating local profile with data:", userData);
+        
+        // Save to localStorage
+        localStorage.setItem('farmtrack_profile', JSON.stringify(userData));
+        
+        setFarmerId(userData.id);
+        setUsingLocalStorage(true);
+        toast.success('Local profile created successfully');
+      } catch (error) {
+        console.error('Local profile creation error:', error);
+        setFarmerError('Failed to create even a local profile. Please try again.');
+      }
+    };
+
+    getFarmerProfile();
   }, [user, isAuthenticated]);
 
   const validate = () => {
@@ -126,23 +177,57 @@ const NewFarmlandPage = () => {
     setIsSubmitting(true);
     
     try {
-      // Add farmland
-      const { error } = await supabase
-        .from('farmlands')
-        .insert({
-          farmer_id: farmerId,
-          name,
-          location,
-          size_hectares: parseFloat(size),
-          soil_type: soilType,
-        });
+      const farmlandData = {
+        id: crypto.randomUUID(),
+        farmer_id: farmerId,
+        name,
+        location,
+        size_hectares: parseFloat(size),
+        soil_type: soilType,
+        created_at: new Date().toISOString(),
+      };
 
-      if (error) {
-        throw new Error(error.message);
+      if (usingLocalStorage || !isSupabaseConfigured()) {
+        // Save to localStorage
+        const existingFarmlandsJson = localStorage.getItem('farmtrack_farmlands');
+        const existingFarmlands = existingFarmlandsJson ? JSON.parse(existingFarmlandsJson) : [];
+        
+        const updatedFarmlands = [farmlandData, ...existingFarmlands];
+        localStorage.setItem('farmtrack_farmlands', JSON.stringify(updatedFarmlands));
+        
+        toast.success('Farmland added successfully (locally)');
+        navigate('/farmlands');
+      } else {
+        // Add to Supabase
+        const { error } = await supabase
+          .from('farmlands')
+          .insert({
+            farmer_id: farmerId,
+            name,
+            location,
+            size_hectares: parseFloat(size),
+            soil_type: soilType,
+          });
+
+        if (error) {
+          // Fallback to localStorage if database insert fails
+          console.error('Error adding farmland to database:', error);
+          
+          // Save to localStorage as fallback
+          const existingFarmlandsJson = localStorage.getItem('farmtrack_farmlands');
+          const existingFarmlands = existingFarmlandsJson ? JSON.parse(existingFarmlandsJson) : [];
+          
+          const updatedFarmlands = [farmlandData, ...existingFarmlands];
+          localStorage.setItem('farmtrack_farmlands', JSON.stringify(updatedFarmlands));
+          
+          toast.success('Farmland added successfully (locally)');
+          navigate('/farmlands');
+          return;
+        }
+
+        toast.success('Farmland added successfully');
+        navigate('/farmlands');
       }
-
-      toast.success('Farmland added successfully');
-      navigate('/farmlands');
     } catch (error: any) {
       console.error('Error adding farmland:', error);
       toast.error('Failed to add farmland');
@@ -173,7 +258,17 @@ const NewFarmlandPage = () => {
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>Warning</AlertTitle>
             <AlertDescription>
-              Supabase is not properly configured. Your data will not be saved to the database.
+              Supabase is not properly configured. Your data will be saved locally only.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {usingLocalStorage && isConfigured && (
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Notice</AlertTitle>
+            <AlertDescription>
+              Using local storage for farmland data. Database connection will be attempted on next save.
             </AlertDescription>
           </Alert>
         )}

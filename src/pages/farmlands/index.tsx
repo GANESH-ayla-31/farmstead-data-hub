@@ -31,32 +31,62 @@ const FarmlandsPage = () => {
   useEffect(() => {
     // First check if the farmer profile exists
     const checkFarmerProfile = async () => {
-      if (!user || !isAuthenticated || !isSupabaseConfigured()) {
+      if (!user || !isAuthenticated) {
         setCheckingProfile(false);
         return;
       }
 
       try {
-        const { data, error } = await supabase
-          .from('farmers')
-          .select('id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (error) {
-          console.error('Error checking farmer profile:', error);
-          setError('Error checking farmer profile');
-          setHasProfile(false);
-        } else {
-          // If data exists, the profile exists
-          setHasProfile(!!data);
-          
-          // If profile exists, fetch farmlands
-          if (data) {
-            fetchFarmlands(data.id);
-          } else {
+        // First check localStorage for a profile
+        const localProfile = localStorage.getItem('farmtrack_profile');
+        if (localProfile) {
+          try {
+            const parsedProfile = JSON.parse(localProfile);
+            console.log("Found profile in localStorage:", parsedProfile);
+            setHasProfile(true);
+            
+            // Try to fetch farmlands or create empty array if not available
+            const localFarmlands = localStorage.getItem('farmtrack_farmlands');
+            if (localFarmlands) {
+              setFarmlands(JSON.parse(localFarmlands));
+            } else {
+              setFarmlands([]);
+            }
             setLoading(false);
+            setCheckingProfile(false);
+            return;
+          } catch (error) {
+            console.error('Error parsing localStorage profile:', error);
           }
+        }
+        
+        // If no local profile or failed to parse, check database if configured
+        if (isSupabaseConfigured()) {
+          const { data, error } = await supabase
+            .from('farmers')
+            .select('id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+          if (error) {
+            console.error('Error checking farmer profile:', error);
+            setError('Error checking farmer profile');
+            setHasProfile(false);
+          } else {
+            // If data exists, the profile exists
+            setHasProfile(!!data);
+            
+            // If profile exists, fetch farmlands
+            if (data) {
+              fetchFarmlands(data.id);
+            } else {
+              setLoading(false);
+            }
+          }
+        } else {
+          // If Supabase isn't configured and no local profile, set hasProfile to false
+          setHasProfile(false);
+          setLoading(false);
         }
       } catch (err) {
         console.error('Error in profile check:', err);
