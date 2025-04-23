@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
@@ -37,7 +36,6 @@ const CropsPage = () => {
   const [selectedCrop, setSelectedCrop] = useState<Crop | null>(null);
 
   useEffect(() => {
-    // First check if the farmer profile exists
     const checkFarmerProfile = async () => {
       if (!user || !isAuthenticated) {
         setCheckingProfile(false);
@@ -45,7 +43,6 @@ const CropsPage = () => {
       }
 
       try {
-        // First check localStorage for a profile
         const localProfile = localStorage.getItem('farmtrack_profile');
         if (localProfile) {
           try {
@@ -53,12 +50,10 @@ const CropsPage = () => {
             console.log("Found profile in localStorage:", parsedProfile);
             setHasProfile(true);
             
-            // Try to fetch crops or create empty array if not available
             const localCrops = localStorage.getItem('farmtrack_crops');
             if (localCrops) {
               setCrops(JSON.parse(localCrops));
             } else {
-              // If no local crops, add some default crops for better user experience
               const defaultCrops = getDefaultCrops();
               localStorage.setItem('farmtrack_crops', JSON.stringify(defaultCrops));
               setCrops(defaultCrops);
@@ -71,7 +66,6 @@ const CropsPage = () => {
           }
         }
         
-        // If no local profile or failed to parse, check database if configured
         if (isSupabaseConfigured()) {
           const { data, error } = await supabase
             .from('farmers')
@@ -84,10 +78,8 @@ const CropsPage = () => {
             setError('Error checking farmer profile');
             setHasProfile(false);
           } else {
-            // If data exists, the profile exists
             setHasProfile(!!data);
             
-            // If profile exists, fetch crops
             if (data) {
               fetchCrops();
             } else {
@@ -95,7 +87,6 @@ const CropsPage = () => {
             }
           }
         } else {
-          // If Supabase isn't configured and no local profile, set hasProfile to false
           setHasProfile(false);
           setLoading(false);
         }
@@ -124,12 +115,10 @@ const CropsPage = () => {
 
           setCrops(data || []);
         } else {
-          // Try to fetch from local storage
           const localCrops = localStorage.getItem('farmtrack_crops');
           if (localCrops) {
             setCrops(JSON.parse(localCrops));
           } else {
-            // If no local crops, add some default crops for better user experience
             const defaultCrops = getDefaultCrops();
             localStorage.setItem('farmtrack_crops', JSON.stringify(defaultCrops));
             setCrops(defaultCrops);
@@ -348,7 +337,7 @@ const CropsPage = () => {
                           </div>
                           
                           <div className="mt-4 pt-3 border-t border-gray-100">
-                            <Alert variant="outline" className="bg-blue-50">
+                            <Alert>
                               <Info className="h-4 w-4 text-blue-500" />
                               <AlertTitle className="text-blue-700">Planting Tip</AlertTitle>
                               <AlertDescription className="text-blue-600 text-sm">
