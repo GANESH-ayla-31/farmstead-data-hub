@@ -42,6 +42,9 @@ const Login = () => {
           <CardDescription>
             Enter your credentials to access your farm management system
           </CardDescription>
+          <div className="bg-amber-100 text-amber-800 p-3 rounded-md text-sm mt-4">
+            <strong>Test Login:</strong> Use email: test@example.com and password: password123
+          </div>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">

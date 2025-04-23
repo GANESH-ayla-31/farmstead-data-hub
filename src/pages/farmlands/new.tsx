@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
@@ -58,7 +57,7 @@ const NewFarmlandPage = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!validate()) return;
+    if (!validate() || !user) return;
     
     setIsSubmitting(true);
     
@@ -67,10 +66,16 @@ const NewFarmlandPage = () => {
       const { data: farmerData, error: farmerError } = await supabase
         .from('farmers')
         .select('id')
-        .eq('user_id', user?.id)
-        .single();
+        .eq('user_id', user.id)
+        .maybeSingle();
 
-      if (farmerError || !farmerData) {
+      if (farmerError) {
+        console.error('Error fetching farmer:', farmerError);
+        throw new Error('Could not find farmer profile');
+      }
+
+      if (!farmerData) {
+        console.error('No farmer found for this user');
         throw new Error('Could not find farmer profile');
       }
 

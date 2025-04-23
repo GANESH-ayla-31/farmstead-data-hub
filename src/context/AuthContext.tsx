@@ -1,86 +1,192 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { Session, User } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { toast } from 'sonner';
 
+// Dummy user interface
+interface DummyUser {
+  id: string;
+  email: string;
+  name: string;
+}
+
 interface AuthContextType {
-  user: User | null;
-  session: Session | null;
+  user: DummyUser | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string, name: string) => Promise<void>;
   signOut: () => Promise<void>;
   isConfigured: boolean;
 }
 
+// Store registered users locally during session
+const localUsers: Record<string, {email: string; password: string; id: string; name: string}> = {
+  // Pre-registered test user
+  'test@example.com': {
+    email: 'test@example.com',
+    password: 'password123',
+    id: '123456',
+    name: 'Test User'
+  }
+};
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<DummyUser | null>(null);
   const [loading, setLoading] = useState(true);
   const isConfigured = isSupabaseConfigured();
 
   useEffect(() => {
-    const getSession = async () => {
-      if (!isConfigured) {
-        console.warn('Supabase is not configured. Please check your environment variables.');
-        setLoading(false);
-        return;
-      }
-      
+    // Check for stored user in localStorage
+    const checkLoggedInStatus = () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        setSession(session);
-        setUser(session?.user ?? null);
+        const storedUser = localStorage.getItem('farmtrack_user');
+        if (storedUser) {
+          setUser(JSON.parse(storedUser));
+        }
       } catch (error) {
-        console.error('Error getting session:', error);
-        toast.error('Failed to connect to Supabase. Please check your configuration.');
+        console.error('Error checking login status:', error);
       } finally {
         setLoading(false);
       }
     };
 
-    getSession();
+    checkLoggedInStatus();
+  }, []);
 
-    if (isConfigured) {
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        setLoading(false);
-      });
+  // Helper function to ensure a farmer record exists for the user
+  const ensureFarmerExists = async (userId: string, email: string, name: string) => {
+    if (!isConfigured) return null;
 
-      return () => subscription.unsubscribe();
+    try {
+      // Check if farmer record already exists
+      const { data: existingFarmer, error: checkError } = await supabase
+        .from('farmers')
+        .select('id')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (checkError) throw checkError;
+
+      // If farmer doesn't exist, create one
+      if (!existingFarmer) {
+        const { data: newFarmer, error: insertError } = await supabase
+          .from('farmers')
+          .insert({
+            user_id: userId,
+            name: name,
+            email: email,
+            contact_number: '000-000-0000', // Default placeholder
+            address: 'No address provided' // Default placeholder
+          })
+          .select('id')
+          .single();
+
+        if (insertError) throw insertError;
+        
+        return newFarmer.id;
+      }
+      
+      return existingFarmer.id;
+    } catch (error) {
+      console.error('Error ensuring farmer exists:', error);
+      toast.error('Failed to create farmer profile');
+      return null;
     }
-  }, [isConfigured]);
-
-  const signIn = async (email: string, password: string) => {
-    if (!isConfigured) {
-      throw new Error('Supabase is not properly configured');
-    }
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
   };
 
-  const signUp = async (email: string, password: string) => {
-    if (!isConfigured) {
-      throw new Error('Supabase is not properly configured');
+  const signIn = async (email: string, password: string) => {
+    setLoading(true);
+    try {
+      // Check if user exists in our local record
+      const userRecord = localUsers[email.toLowerCase()];
+      
+      if (!userRecord || userRecord.password !== password) {
+        throw new Error('Invalid email or password');
+      }
+
+      // Create a dummy user object
+      const dummyUser = {
+        id: userRecord.id,
+        email: userRecord.email,
+        name: userRecord.name
+      };
+
+      // Store in localStorage for persistence
+      localStorage.setItem('farmtrack_user', JSON.stringify(dummyUser));
+      setUser(dummyUser);
+
+      // Ensure farmer record exists in Supabase
+      await ensureFarmerExists(dummyUser.id, dummyUser.email, dummyUser.name);
+      
+      toast.success('Signed in successfully!');
+    } catch (error) {
+      console.error('Sign in error:', error);
+      toast.error('Invalid email or password. Please try again.');
+      throw error;
+    } finally {
+      setLoading(false);
     }
-    const { error } = await supabase.auth.signUp({ email, password });
-    if (error) throw error;
+  };
+
+  const signUp = async (email: string, password: string, name: string = 'New Farmer') => {
+    setLoading(true);
+    try {
+      // Check if email already exists
+      if (localUsers[email.toLowerCase()]) {
+        throw new Error('Email already in use');
+      }
+
+      // Generate a unique ID
+      const newId = Date.now().toString();
+
+      // Register the new user
+      localUsers[email.toLowerCase()] = {
+        email: email.toLowerCase(),
+        password,
+        id: newId,
+        name
+      };
+
+      // Create a dummy user object
+      const dummyUser = {
+        id: newId,
+        email: email.toLowerCase(),
+        name
+      };
+
+      // Store in localStorage for persistence
+      localStorage.setItem('farmtrack_user', JSON.stringify(dummyUser));
+      setUser(dummyUser);
+
+      // Ensure farmer record exists in Supabase
+      await ensureFarmerExists(dummyUser.id, dummyUser.email, dummyUser.name);
+      
+      toast.success('Account created successfully!');
+    } catch (error) {
+      console.error('Sign up error:', error);
+      toast.error('Failed to create account. Please try again.');
+      throw error;
+    } finally {
+      setLoading(false);
+    }
   };
 
   const signOut = async () => {
-    if (!isConfigured) {
-      throw new Error('Supabase is not properly configured');
+    try {
+      localStorage.removeItem('farmtrack_user');
+      setUser(null);
+      toast.success('Signed out successfully');
+    } catch (error) {
+      console.error('Sign out error:', error);
+      toast.error('Failed to sign out');
+      throw error;
     }
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, signIn, signUp, signOut, isConfigured }}>
+    <AuthContext.Provider value={{ user, loading, signIn, signUp, signOut, isConfigured }}>
       {children}
     </AuthContext.Provider>
   );

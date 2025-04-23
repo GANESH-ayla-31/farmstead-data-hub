@@ -6,15 +6,11 @@ import { Sprout } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { supabase } from '@/lib/supabase';
 
 const Register = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
-  const [contact, setContact] = useState('');
-  const [address, setAddress] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const { signUp } = useAuth();
@@ -25,42 +21,12 @@ const Register = () => {
     setIsLoading(true);
     setError(null);
 
-    if (password !== confirmPassword) {
-      setError('Passwords do not match');
-      setIsLoading(false);
-      return;
-    }
-
     try {
-      // Sign up with Supabase Auth
-      await signUp(email, password);
-
-      // Get the newly created user
-      const { data: { user } } = await supabase.auth.getUser();
-
-      if (user) {
-        // Create a new farmer profile in the farmers table
-        const { error: profileError } = await supabase
-          .from('farmers')
-          .insert({
-            user_id: user.id,
-            name,
-            contact_number: contact,
-            address,
-            email,
-          });
-
-        if (profileError) throw profileError;
-      }
-
-      // Redirect to login page
-      navigate('/auth/login', { 
-        state: { message: 'Registration successful! Please check your email to verify your account before logging in.' } 
-      });
-      
+      await signUp(email, password, name);
+      navigate('/');
     } catch (err) {
+      setError('Failed to create account. Email might already be in use.');
       console.error('Registration error:', err);
-      setError('Failed to register. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -75,7 +41,7 @@ const Register = () => {
           </div>
           <CardTitle className="text-2xl font-bold">Create an Account</CardTitle>
           <CardDescription>
-            Enter your details to create your farm management account
+            Sign up to start managing your farm efficiently
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -91,7 +57,6 @@ const Register = () => {
               </label>
               <Input
                 id="name"
-                type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="John Doe"
@@ -112,32 +77,6 @@ const Register = () => {
               />
             </div>
             <div className="space-y-2">
-              <label htmlFor="contact" className="text-sm font-medium">
-                Contact Number
-              </label>
-              <Input
-                id="contact"
-                type="text"
-                value={contact}
-                onChange={(e) => setContact(e.target.value)}
-                placeholder="+1 234 567 8900"
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <label htmlFor="address" className="text-sm font-medium">
-                Address
-              </label>
-              <Input
-                id="address"
-                type="text"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="123 Farm Road, Rural Town"
-                required
-              />
-            </div>
-            <div className="space-y-2">
               <label htmlFor="password" className="text-sm font-medium">
                 Password
               </label>
@@ -148,24 +87,14 @@ const Register = () => {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 required
-                minLength={6}
+                minLength={8}
               />
-            </div>
-            <div className="space-y-2">
-              <label htmlFor="confirmPassword" className="text-sm font-medium">
-                Confirm Password
-              </label>
-              <Input
-                id="confirmPassword"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="••••••••"
-                required
-              />
+              <p className="text-xs text-muted-foreground">
+                Password must be at least 8 characters long
+              </p>
             </div>
             <Button type="submit" className="w-full bg-farm-green hover:bg-farm-green-dark" disabled={isLoading}>
-              {isLoading ? 'Creating Account...' : 'Create Account'}
+              {isLoading ? 'Creating account...' : 'Create Account'}
             </Button>
           </form>
         </CardContent>

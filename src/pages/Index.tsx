@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import MainLayout from '@/components/layout/MainLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -39,32 +38,58 @@ interface CropCycle {
 }
 
 const Dashboard = () => {
-  const { user } = useAuth();
+  const { user, isConfigured } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [weatherData, setWeatherData] = useState<WeatherData[]>([]);
   const [upcomingHarvests, setUpcomingHarvests] = useState<CropCycle[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [farmerId, setFarmerId] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchFarmerData = async () => {
-      if (!user) return;
+    const getFarmerId = async () => {
+      if (!user || !isConfigured) {
+        setIsLoading(false);
+        return;
+      }
 
       try {
-        // Get farmer ID from the farmers table
-        const { data: farmerData, error: farmerError } = await supabase
+        const { data, error } = await supabase
           .from('farmers')
           .select('id')
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
 
-        if (farmerError || !farmerData) {
-          console.error('Error fetching farmer data:', farmerError);
+        if (error) {
+          console.error('Error fetching farmer data:', error);
+          return null;
+        }
+
+        if (data) {
+          setFarmerId(data.id);
+          return data.id;
+        } else {
+          console.error('No farmer found for this user');
+          return null;
+        }
+      } catch (error) {
+        console.error('Error in getFarmerId:', error);
+        return null;
+      }
+    };
+
+    const fetchFarmerData = async () => {
+      if (!user || !isConfigured) {
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        const farmerId = await getFarmerId();
+        if (!farmerId) {
+          setIsLoading(false);
           return;
         }
 
-        const farmerId = farmerData.id;
-
-        // Fetch dashboard stats using database function
         const { data: dashboardStats, error: statsError } = await supabase
           .rpc('get_farmer_dashboard', { farmer_id: farmerId });
 
@@ -74,7 +99,6 @@ const Dashboard = () => {
           setStats(dashboardStats as DashboardStats);
         }
 
-        // Fetch upcoming harvests
         const { data: harvestData, error: harvestError } = await supabase
           .from('active_crop_cycles')
           .select('id, crop_name, farmland_name, status, expected_harvest_date, days_to_harvest')
@@ -89,7 +113,6 @@ const Dashboard = () => {
           setUpcomingHarvests(harvestData || []);
         }
 
-        // Fetch weather data (most recent week)
         const { data: farmlandIds } = await supabase
           .from('farmlands')
           .select('id')
@@ -106,7 +129,6 @@ const Dashboard = () => {
           if (weatherError) {
             console.error('Error fetching weather data:', weatherError);
           } else {
-            // Reverse to show chronological order
             setWeatherData(weatherDataResult ? [...weatherDataResult].reverse() : []);
           }
         }
@@ -118,7 +140,54 @@ const Dashboard = () => {
     };
 
     fetchFarmerData();
-  }, [user]);
+  }, [user, isConfigured]);
+
+  const demoWeatherData = weatherData.length > 0 ? weatherData : [
+    { date: '2023-04-17', temperature: 24 },
+    { date: '2023-04-18', temperature: 22 },
+    { date: '2023-04-19', temperature: 25 },
+    { date: '2023-04-20', temperature: 27 },
+    { date: '2023-04-21', temperature: 26 },
+    { date: '2023-04-22', temperature: 29 },
+    { date: '2023-04-23', temperature: 28 },
+  ];
+
+  if (!isConfigured) {
+    return (
+      <MainLayout>
+        <div className="space-y-6">
+          <div>
+            <h1 className="text-2xl font-bold">Dashboard</h1>
+            <p className="text-muted-foreground">Welcome to your farm management dashboard.</p>
+          </div>
+          
+          <Card className="border-amber-300 bg-amber-50">
+            <CardContent className="p-6">
+              <div className="flex items-start space-x-4">
+                <AlertTriangle className="h-6 w-6 text-amber-600 mt-1" />
+                <div>
+                  <h3 className="font-bold text-amber-800">Supabase Configuration Issue</h3>
+                  <p className="text-amber-700 mt-1">
+                    The connection to the database is not properly configured. Some features may not work correctly.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Sample Data (Database not connected)</CardTitle>
+              <CardDescription>This is sample data for demonstration purposes.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p>Please ensure your database connection is configured correctly to see your real data.</p>
+            </CardContent>
+          </Card>
+        </div>
+      </MainLayout>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -130,17 +199,6 @@ const Dashboard = () => {
     );
   }
 
-  // Sample data for demonstration if no real data available
-  const demoWeatherData = weatherData.length > 0 ? weatherData : [
-    { date: '2023-04-17', temperature: 24 },
-    { date: '2023-04-18', temperature: 22 },
-    { date: '2023-04-19', temperature: 25 },
-    { date: '2023-04-20', temperature: 27 },
-    { date: '2023-04-21', temperature: 26 },
-    { date: '2023-04-22', temperature: 29 },
-    { date: '2023-04-23', temperature: 28 },
-  ];
-
   return (
     <MainLayout>
       <div className="space-y-6">
@@ -149,7 +207,6 @@ const Dashboard = () => {
           <p className="text-muted-foreground">Welcome to your farm management dashboard.</p>
         </div>
         
-        {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card>
             <CardContent className="p-6 flex items-center justify-between">
@@ -192,9 +249,7 @@ const Dashboard = () => {
           </Card>
         </div>
         
-        {/* Main content area */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Upcoming Harvests */}
           <Card className="lg:col-span-2">
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -233,15 +288,14 @@ const Dashboard = () => {
               ) : (
                 <div className="text-center py-8">
                   <p className="text-muted-foreground">No upcoming harvests</p>
-                  <Link to="/crops/new" className="text-farm-green hover:underline mt-2 inline-block">
-                    Plant a new crop
+                  <Link to="/farmlands/new" className="text-farm-green hover:underline mt-2 inline-block">
+                    Add a farmland first
                   </Link>
                 </div>
               )}
             </CardContent>
           </Card>
 
-          {/* Weather Trend */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -279,7 +333,6 @@ const Dashboard = () => {
             </CardContent>
           </Card>
           
-          {/* Market Prices */}
           <Card className="lg:col-span-3">
             <CardHeader>
               <div className="flex items-center justify-between">
