@@ -14,6 +14,7 @@ import NewFarmlandPage from "./pages/farmlands/new";
 import CropsPage from "./pages/crops";
 import NewCropPage from "./pages/crops/new";
 import ProfilePage from "./pages/profile";
+import CalendarPage from "./pages/calendar";
 
 const queryClient = new QueryClient();
 
@@ -39,6 +40,9 @@ const App = () => (
             {/* Crop Routes */}
             <Route path="/crops" element={<CropsPage />} />
             <Route path="/crops/new" element={<NewCropPage />} />
+            
+            {/* Calendar Route */}
+            <Route path="/calendar" element={<CalendarPage />} />
             
             {/* Profile Routes */}
             <Route path="/profile" element={<ProfilePage />} />

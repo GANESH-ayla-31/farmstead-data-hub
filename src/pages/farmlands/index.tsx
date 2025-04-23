@@ -1,71 +1,74 @@
 
 import { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import MainLayout from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { MapPin, Plus, Search, Edit, Trash } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Plus, Tractor, AlertTriangle, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertCircle } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 
-interface Farmland {
+type Farmland = {
   id: string;
   name: string;
   location: string;
   size_hectares: number;
   soil_type: string;
   created_at: string;
-}
+};
 
 const FarmlandsPage = () => {
   const { user, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
   const [farmlands, setFarmlands] = useState<Farmland[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasProfile, setHasProfile] = useState<boolean | null>(null);
+  const [checkingProfile, setCheckingProfile] = useState(true);
 
   useEffect(() => {
-    const fetchFarmlands = async () => {
-      if (!user || !isAuthenticated) {
-        setIsLoading(false);
+    // First check if the farmer profile exists
+    const checkFarmerProfile = async () => {
+      if (!user || !isAuthenticated || !isSupabaseConfigured()) {
+        setCheckingProfile(false);
         return;
       }
 
-      if (!isSupabaseConfigured()) {
-        setError("Supabase connection is not properly configured.");
-        setIsLoading(false);
-        return;
-      }
-
-      setIsLoading(true);
       try {
-        // First get the farmer ID
-        const { data: farmerData, error: farmerError } = await supabase
+        const { data, error } = await supabase
           .from('farmers')
           .select('id')
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
 
-        if (farmerError) {
-          console.error('Error fetching farmer data:', farmerError);
-          setError("Could not find your farmer profile. Please create a profile first.");
-          setIsLoading(false);
-          return;
+        if (error) {
+          console.error('Error checking farmer profile:', error);
+          setError('Error checking farmer profile');
+          setHasProfile(false);
+        } else {
+          // If data exists, the profile exists
+          setHasProfile(!!data);
+          
+          // If profile exists, fetch farmlands
+          if (data) {
+            fetchFarmlands(data.id);
+          } else {
+            setLoading(false);
+          }
         }
+      } catch (err) {
+        console.error('Error in profile check:', err);
+        setError('Error checking your profile');
+        setHasProfile(false);
+      } finally {
+        setCheckingProfile(false);
+      }
+    };
 
-        if (!farmerData) {
-          setError("No farmer profile found. Please create a profile first.");
-          setIsLoading(false);
-          return;
-        }
-
-        const farmerId = farmerData.id;
-
-        // Then get all farmlands for this farmer
+    const fetchFarmlands = async (farmerId: string) => {
+      try {
         const { data, error } = await supabase
           .from('farmlands')
           .select('*')
@@ -73,155 +76,113 @@ const FarmlandsPage = () => {
           .order('created_at', { ascending: false });
 
         if (error) {
-          console.error('Error fetching farmlands:', error);
-          setError("Failed to load farmlands. Please try again later.");
+          console.error('Error fetching farmer data:', error);
+          setError('Failed to load farmlands');
           return;
         }
 
         setFarmlands(data || []);
-        setError(null);
-      } catch (error) {
-        console.error('Farmlands fetching error:', error);
-        setError("An unexpected error occurred. Please try again later.");
+      } catch (err) {
+        console.error('Error in farmland fetch:', err);
+        setError('Failed to load farmlands');
       } finally {
-        setIsLoading(false);
+        setLoading(false);
       }
     };
 
-    fetchFarmlands();
+    checkFarmerProfile();
   }, [user, isAuthenticated]);
 
-  const handleDelete = async (id: string) => {
-    if (confirm('Are you sure you want to delete this farmland? This will also delete all associated crop cycles and data.')) {
-      try {
-        const { error } = await supabase
-          .from('farmlands')
-          .delete()
-          .eq('id', id);
-
-        if (error) {
-          throw error;
-        }
-
-        setFarmlands(farmlands.filter(farmland => farmland.id !== id));
-        toast.success('Farmland deleted successfully');
-      } catch (error) {
-        console.error('Error deleting farmland:', error);
-        toast.error('Failed to delete farmland');
-      }
-    }
+  const handleCreateProfile = () => {
+    navigate('/profile');
+    toast.info('Please create your profile first');
   };
-
-  const filteredFarmlands = farmlands.filter(
-    farmland => 
-      farmland.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      farmland.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      farmland.soil_type.toLowerCase().includes(searchQuery.toLowerCase())
-  );
 
   return (
     <MainLayout>
       <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold">Farmlands</h1>
+            <h1 className="text-2xl font-bold">Your Farmlands</h1>
             <p className="text-muted-foreground">Manage your farmland properties</p>
           </div>
-          <Link to="/farmlands/new">
-            <Button className="bg-green-600 hover:bg-green-700">
-              <Plus className="h-4 w-4 mr-2" /> Add Farmland
-            </Button>
-          </Link>
+          {hasProfile && (
+            <Link to="/farmlands/new">
+              <Button className="bg-green-600 hover:bg-green-700">
+                <Plus className="mr-2 h-4 w-4" />
+                Add Farmland
+              </Button>
+            </Link>
+          )}
         </div>
 
-        {error && (
+        {checkingProfile ? (
+          <div className="flex justify-center p-8">
+            <Loader2 className="h-8 w-8 animate-spin text-green-600" />
+            <span className="ml-2">Checking your profile...</span>
+          </div>
+        ) : !hasProfile ? (
+          <Alert className="bg-amber-50 border-amber-300">
+            <AlertTriangle className="h-4 w-4 text-amber-600" />
+            <AlertTitle className="text-amber-800">Profile Required</AlertTitle>
+            <AlertDescription className="text-amber-700">
+              You need to create a farmer profile before managing farmlands.
+              <div className="mt-4">
+                <Button onClick={handleCreateProfile} className="bg-green-600 hover:bg-green-700">
+                  Create Your Profile
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        ) : loading ? (
+          <div className="flex justify-center p-8">
+            <Loader2 className="h-8 w-8 animate-spin text-green-600" />
+            <span className="ml-2">Loading farmlands...</span>
+          </div>
+        ) : error ? (
           <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
+            <AlertTriangle className="h-4 w-4" />
             <AlertTitle>Error</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
-        )}
-
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-          <Input
-            placeholder="Search farmlands by name, location, or soil type..."
-            className="pl-10"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
-
-        {isLoading ? (
-          <div className="flex justify-center p-8">
-            <div className="w-10 h-10 border-4 border-green-600 border-t-transparent rounded-full animate-spin"></div>
-          </div>
-        ) : filteredFarmlands.length === 0 ? (
-          <Card className="text-center py-8">
-            <CardContent>
-              {searchQuery ? (
-                <>
-                  <p className="text-lg font-medium">No farmlands match your search</p>
-                  <p className="text-muted-foreground mt-1">Try different search terms</p>
-                </>
-              ) : (
-                <>
-                  <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
-                    <MapPin className="h-8 w-8 text-green-600" />
-                  </div>
-                  <p className="text-lg font-medium">No farmlands yet</p>
-                  <p className="text-muted-foreground mt-1">Add a new farmland to start managing your crops</p>
-                  <Link to="/farmlands/new" className="mt-4 inline-block">
-                    <Button size="sm" variant="outline">Add Your First Farmland</Button>
-                  </Link>
-                </>
-              )}
+        ) : farmlands.length === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center p-6 text-center">
+              <Tractor className="h-16 w-16 text-gray-300 mb-4" />
+              <h3 className="text-lg font-medium mb-2">No Farmlands Yet</h3>
+              <p className="text-muted-foreground mb-6">
+                You haven't added any farmland properties to your account.
+              </p>
+              <Link to="/farmlands/new">
+                <Button className="bg-green-600 hover:bg-green-700">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Your First Farmland
+                </Button>
+              </Link>
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredFarmlands.map((farmland) => (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {farmlands.map((farmland) => (
               <Card key={farmland.id} className="overflow-hidden">
-                <div className="h-32 bg-green-100 flex items-center justify-center">
-                  <MapPin className="h-12 w-12 text-green-600" />
-                </div>
-                <CardHeader className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="font-bold text-lg truncate">{farmland.name}</h3>
-                      <p className="text-sm text-muted-foreground truncate">{farmland.location}</p>
-                    </div>
-                    <div className="flex gap-2">
-                      <Link to={`/farmlands/edit/${farmland.id}`}>
-                        <Button variant="outline" size="icon" className="h-8 w-8">
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                      </Link>
-                      <Button 
-                        variant="outline" 
-                        size="icon" 
-                        className="h-8 w-8 text-destructive hover:bg-destructive/10"
-                        onClick={() => handleDelete(farmland.id)}
-                      >
-                        <Trash className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
+                <CardHeader className="bg-green-50">
+                  <CardTitle className="text-lg">{farmland.name}</CardTitle>
                 </CardHeader>
-                <CardContent className="p-4 pt-0">
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div>
-                      <p className="text-muted-foreground">Size</p>
-                      <p className="font-medium">{farmland.size_hectares} hectares</p>
+                <CardContent className="pt-4">
+                  <dl className="space-y-2">
+                    <div className="flex justify-between">
+                      <dt className="font-medium text-gray-500">Location:</dt>
+                      <dd>{farmland.location}</dd>
                     </div>
-                    <div>
-                      <p className="text-muted-foreground">Soil Type</p>
-                      <p className="font-medium">{farmland.soil_type}</p>
+                    <div className="flex justify-between">
+                      <dt className="font-medium text-gray-500">Size:</dt>
+                      <dd>{farmland.size_hectares} hectares</dd>
                     </div>
-                  </div>
-                  <Link to={`/farmlands/${farmland.id}`} className="mt-4 inline-block w-full">
-                    <Button variant="outline" className="w-full">View Details</Button>
-                  </Link>
+                    <div className="flex justify-between">
+                      <dt className="font-medium text-gray-500">Soil Type:</dt>
+                      <dd>{farmland.soil_type}</dd>
+                    </div>
+                  </dl>
                 </CardContent>
               </Card>
             ))}
