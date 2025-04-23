@@ -132,7 +132,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setUser(dummyUser);
       
       toast.success('Account created successfully!');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Sign up error:', error);
       toast.error('Failed to create account. Please try again.');
       throw error;

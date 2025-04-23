@@ -10,7 +10,7 @@ CREATE OR REPLACE FUNCTION create_farmer(
 DECLARE
   v_farmer_id UUID;
 BEGIN
-  -- Remove foreign key constraint check temporarily
+  -- Insert the farmer with the provided details
   INSERT INTO farmers (user_id, name, email, contact_number, address)
   VALUES (p_user_id, p_name, p_email, p_contact_number, p_address)
   RETURNING id INTO v_farmer_id;
@@ -28,4 +28,3 @@ WITH CHECK (true);
 
 -- Grant execute permission on the function
 GRANT EXECUTE ON FUNCTION create_farmer(UUID, TEXT, TEXT, TEXT, TEXT) TO public;
-

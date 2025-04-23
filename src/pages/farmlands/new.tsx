@@ -46,6 +46,7 @@ const NewFarmlandPage = () => {
   const [farmerError, setFarmerError] = useState<string | null>(null);
   const [farmerId, setFarmerId] = useState<string | null>(null);
   const [dbConnected, setDbConnected] = useState<boolean>(false);
+  const [creatingFarmer, setCreatingFarmer] = useState<boolean>(false);
 
   useEffect(() => {
     const checkConnection = async () => {
@@ -66,10 +67,13 @@ const NewFarmlandPage = () => {
   
   useEffect(() => {
     const getFarmerId = async () => {
-      if (!user || !isConfigured || !dbConnected) return;
+      if (!user || !isConfigured || !dbConnected || creatingFarmer) return;
       
       try {
+        setCreatingFarmer(true);
+        
         // First attempt: Check if farmer already exists
+        console.log('Checking if farmer exists for user:', user.id);
         const { data: farmerData, error } = await supabase
           .from('farmers')
           .select('id')
@@ -78,21 +82,18 @@ const NewFarmlandPage = () => {
         
         if (error) {
           console.error('Error getting farmer ID:', error);
-          setFarmerError('Error checking for farmer profile: ' + error.message);
-          return;
         }
         
         if (farmerData) {
           console.log('Found farmer ID:', farmerData.id);
           setFarmerId(farmerData.id);
+          setCreatingFarmer(false);
           return;
         }
-        
-        // Second attempt: Create farmer using RPC function
+
+        // Second attempt: Try direct insert without foreign key constraint
         console.log('No farmer found, creating via direct insert');
-        
-        // Create a farmer directly using insert
-        const { data: directInsert, error: insertError } = await supabase
+        const { data: insertedFarmer, error: insertError } = await supabase
           .from('farmers')
           .insert({
             user_id: user.id,
@@ -103,49 +104,71 @@ const NewFarmlandPage = () => {
           })
           .select('id')
           .single();
-          
-        if (insertError) {
-          console.error('Direct insert failed:', insertError);
-          
-          // Third attempt: Create a completely new UUID for the farmer
-          const customUuid = uuidv4();
-          console.log('Trying with custom UUID:', customUuid);
-          
-          const { data: fallbackInsert, error: fallbackError } = await supabase
-            .from('farmers')
-            .insert({
-              user_id: customUuid, // Use generated UUID instead of auth user ID
-              name: user.name || 'New Farmer',
-              email: user.email,
-              contact_number: '000-000-0000',
-              address: 'No address provided'
-            })
-            .select('id')
-            .single();
-            
-          if (fallbackError) {
-            console.error('All farmer creation attempts failed:', fallbackError);
-            setFarmerError('Could not create farmer profile. Please try again later.');
-            return;
-          }
-          
-          console.log('Created farmer with custom UUID:', fallbackInsert);
-          setFarmerId(fallbackInsert.id);
+        
+        if (!insertError && insertedFarmer) {
+          console.log('Created farmer via direct insert:', insertedFarmer);
+          setFarmerId(insertedFarmer.id);
+          setCreatingFarmer(false);
           return;
         }
         
-        console.log('Created farmer via direct insert:', directInsert);
-        setFarmerId(directInsert.id);
+        console.error('Direct insert failed:', insertError);
+
+        // Third attempt: Try with a custom UUID
+        const customUuid = uuidv4();
+        console.log('Trying with custom UUID:', customUuid);
+        
+        const { data: fallbackInsert, error: fallbackError } = await supabase
+          .from('farmers')
+          .insert({
+            user_id: customUuid, // Use generated UUID instead of auth user ID
+            name: user.name || 'New Farmer',
+            email: user.email,
+            contact_number: '000-000-0000',
+            address: 'No address provided'
+          })
+          .select('id')
+          .single();
+        
+        if (!fallbackError && fallbackInsert) {
+          console.log('Created farmer with custom UUID:', fallbackInsert);
+          setFarmerId(fallbackInsert.id);
+          setCreatingFarmer(false);
+          return;
+        }
+        
+        // Fourth attempt: Try using the RPC function
+        console.log('Trying with RPC function');
+        const { data: rpcResult, error: rpcError } = await supabase
+          .rpc('create_farmer', {
+            p_user_id: user.id,
+            p_name: user.name || 'New Farmer',
+            p_email: user.email,
+            p_contact_number: '000-000-0000',
+            p_address: 'No address provided'
+          });
+        
+        if (!rpcError && rpcResult) {
+          console.log('Created farmer via RPC:', rpcResult);
+          setFarmerId(rpcResult);
+          setCreatingFarmer(false);
+          return;
+        }
+
+        console.error('All farmer creation attempts failed:', rpcError || fallbackError);
+        setFarmerError('Could not create farmer profile. Please try again later.');
       } catch (error: any) {
         console.error('Error in farmer ID retrieval:', error);
         setFarmerError(error.message || 'Failed to get farmer profile');
+      } finally {
+        setCreatingFarmer(false);
       }
     };
     
-    if (dbConnected && user) {
+    if (dbConnected && user && !farmerId) {
       getFarmerId();
     }
-  }, [user, isConfigured, dbConnected]);
+  }, [user, isConfigured, dbConnected, farmerId, creatingFarmer]);
 
   const validate = () => {
     const newErrors: Record<string, string> = {};
@@ -318,10 +341,15 @@ const NewFarmlandPage = () => {
               
               <div className="flex justify-end gap-4 pt-4">
                 <Link to="/farmlands">
-                  <Button variant="outline" type="button" disabled={isSubmitting}>Cancel</Button>
+                  <Button variant="outline" type="button" disabled={isSubmitting || creatingFarmer}>Cancel</Button>
                 </Link>
-                <Button type="submit" disabled={isSubmitting} className="bg-farm-green hover:bg-farm-green-dark">
-                  {isSubmitting ? 'Adding...' : 'Add Farmland'}
+                <Button 
+                  type="submit" 
+                  disabled={isSubmitting || creatingFarmer || !farmerId} 
+                  className="bg-farm-green hover:bg-farm-green-dark"
+                >
+                  {creatingFarmer ? 'Creating farmer profile...' : 
+                   isSubmitting ? 'Adding...' : 'Add Farmland'}
                 </Button>
               </div>
             </form>
