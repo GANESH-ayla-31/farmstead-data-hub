@@ -14,64 +14,24 @@ if (!supabaseUrl || !supabaseKey) {
   );
 }
 
-// Create Supabase client with proper error handling
+// Create Supabase client
 export const supabase = createClient<Database>(
   supabaseUrl || 'https://placeholder.supabase.co',  // Placeholder to avoid initialization error
-  supabaseKey || 'placeholder_key',                   // Placeholder to avoid initialization error
+  supabaseKey || 'placeholder_key',                  // Placeholder to avoid initialization error
   {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-    },
-    global: {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    },
-    db: {
-      schema: 'public',
-    },
+    }
   }
 );
 
 // Helper function to check if Supabase connection is properly configured
 export const isSupabaseConfigured = () => {
-  const isConfigured = Boolean(
+  return Boolean(
     supabaseUrl && 
     supabaseKey && 
     supabaseUrl.includes('.supabase.co') &&
     supabaseKey.length > 10
   );
-  
-  if (isConfigured) {
-    console.log('Supabase connection is properly configured:', supabaseUrl);
-  } else {
-    console.warn('Supabase connection is not properly configured. Some features may not work.');
-  }
-  
-  return isConfigured;
-};
-
-// Helper function to verify database connectivity by adding test data
-export const verifyDatabaseConnection = async (): Promise<boolean> => {
-  try {
-    console.log('Testing database connectivity...');
-
-    // First, try a simple query to the crops table which should have public access
-    const { data, error } = await supabase
-      .from('crops')
-      .select('name')
-      .limit(1);
-    
-    if (error) {
-      console.error('Database connectivity test failed:', error);
-      return false;
-    }
-    
-    console.log('Database connectivity successful. Sample data:', data);
-    return true;
-  } catch (e) {
-    console.error('Database connectivity test failed with exception:', e);
-    return false;
-  }
 };

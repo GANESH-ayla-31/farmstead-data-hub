@@ -5,12 +5,13 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/context/AuthContext";
-import Index from "./pages/Index";
+import HomePage from "./pages/Index";
 import Login from "./pages/auth/Login";
 import Register from "./pages/auth/Register";
 import NotFound from "./pages/NotFound";
 import FarmlandsPage from "./pages/farmlands";
 import NewFarmlandPage from "./pages/farmlands/new";
+import ProfilePage from "./pages/profile";
 
 const queryClient = new QueryClient();
 
@@ -27,11 +28,14 @@ const App = () => (
             <Route path="/auth/register" element={<Register />} />
             
             {/* Protected Routes */}
-            <Route path="/" element={<Index />} />
+            <Route path="/" element={<HomePage />} />
             
             {/* Farmland Routes */}
             <Route path="/farmlands" element={<FarmlandsPage />} />
             <Route path="/farmlands/new" element={<NewFarmlandPage />} />
+            
+            {/* Profile Routes */}
+            <Route path="/profile" element={<ProfilePage />} />
             
             {/* Fallback routes */}
             <Route path="*" element={<NotFound />} />
