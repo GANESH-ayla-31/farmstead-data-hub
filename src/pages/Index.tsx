@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import MainLayout from '@/components/layout/MainLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
@@ -90,22 +90,25 @@ const Dashboard = () => {
         }
 
         // Fetch weather data (most recent week)
-        const { data: weatherData, error: weatherError } = await supabase
-          .from('weather_data')
-          .select('date, temperature')
-          .in('farmland_id', supabase
-            .from('farmlands')
-            .select('id')
-            .eq('farmer_id', farmerId)
-          )
-          .order('date', { ascending: false })
-          .limit(7);
+        const { data: farmlandIds } = await supabase
+          .from('farmlands')
+          .select('id')
+          .eq('farmer_id', farmerId);
 
-        if (weatherError) {
-          console.error('Error fetching weather data:', weatherError);
-        } else {
-          // Reverse to show chronological order
-          setWeatherData(weatherData ? [...weatherData].reverse() : []);
+        if (farmlandIds && farmlandIds.length > 0) {
+          const { data: weatherDataResult, error: weatherError } = await supabase
+            .from('weather_data')
+            .select('date, temperature')
+            .in('farmland_id', farmlandIds.map(f => f.id))
+            .order('date', { ascending: false })
+            .limit(7);
+
+          if (weatherError) {
+            console.error('Error fetching weather data:', weatherError);
+          } else {
+            // Reverse to show chronological order
+            setWeatherData(weatherDataResult ? [...weatherDataResult].reverse() : []);
+          }
         }
       } catch (error) {
         console.error('Dashboard data fetching error:', error);
