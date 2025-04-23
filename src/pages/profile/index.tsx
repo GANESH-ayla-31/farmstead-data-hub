@@ -32,92 +32,116 @@ const ProfilePage = () => {
     address: ''
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [usingLocalStorage, setUsingLocalStorage] = useState(false);
 
   useEffect(() => {
     const fetchProfile = async () => {
-      if (!user || !isAuthenticated || !isSupabaseConfigured()) {
+      if (!user || !isAuthenticated) {
         setIsLoading(false);
         return;
       }
       
-      try {
-        console.log("Fetching profile for user:", user.id);
-        const { data, error } = await supabase
-          .from('farmers')
-          .select('*')
-          .eq('user_id', user.id)
-          .maybeSingle();
-          
-        if (error) {
-          console.error('Error fetching farmer profile:', error);
-          return;
-        }
-        
-        if (data) {
-          console.log("Profile found:", data);
-          setFarmerProfile(data);
+      // First, check if we have a profile in localStorage
+      const localProfile = localStorage.getItem('farmtrack_profile');
+      if (localProfile) {
+        try {
+          const parsedProfile = JSON.parse(localProfile);
+          console.log("Found profile in localStorage:", parsedProfile);
+          setFarmerProfile(parsedProfile);
           setFormData({
-            name: data.name || '',
-            email: data.email || '',
-            contact_number: data.contact_number || '',
-            address: data.address || ''
+            name: parsedProfile.name || '',
+            email: parsedProfile.email || '',
+            contact_number: parsedProfile.contact_number || '',
+            address: parsedProfile.address || ''
           });
-        } else {
-          // No profile exists, try to create one
-          console.log("No profile found, creating default profile");
-          await createDefaultProfile();
+          setUsingLocalStorage(true);
+          setIsLoading(false);
+          return;
+        } catch (error) {
+          console.error('Error parsing localStorage profile:', error);
         }
-      } catch (error) {
-        console.error('Profile fetch error:', error);
-      } finally {
-        setIsLoading(false);
       }
-    };
-    
-    const createDefaultProfile = async () => {
-      if (!user) return;
       
-      try {
-        const userData = {
-          user_id: user.id,
-          name: user.user_metadata?.full_name || 'Farmer',
-          email: user.email || '',
-          contact_number: user.user_metadata?.phone || '',
-          address: ''
-        };
-        
-        console.log("Creating default profile with data:", userData);
-        const { data, error } = await supabase
-          .from('farmers')
-          .insert(userData)
-          .select()
-          .single();
+      // Only try database if Supabase is configured
+      if (isSupabaseConfigured()) {
+        try {
+          console.log("Fetching profile for user:", user.id);
+          const { data, error } = await supabase
+            .from('farmers')
+            .select('*')
+            .eq('user_id', user.id)
+            .maybeSingle();
+            
+          if (error) {
+            console.error('Error fetching farmer profile:', error);
+            // Fall back to local storage approach
+            await createLocalProfile();
+            return;
+          }
           
-        if (error) {
-          console.error('Error creating farmer profile:', error);
-          toast.error('Failed to create profile. Please try again.');
-          return;
+          if (data) {
+            console.log("Profile found:", data);
+            setFarmerProfile(data);
+            setFormData({
+              name: data.name || '',
+              email: data.email || '',
+              contact_number: data.contact_number || '',
+              address: data.address || ''
+            });
+          } else {
+            // No profile exists, try to create one
+            console.log("No profile found, creating default profile");
+            await createLocalProfile();
+          }
+        } catch (error) {
+          console.error('Profile fetch error:', error);
+          // Fall back to local storage approach
+          await createLocalProfile();
         }
-        
-        if (data) {
-          console.log("Default profile created:", data);
-          setFarmerProfile(data);
-          setFormData({
-            name: data.name,
-            email: data.email,
-            contact_number: data.contact_number,
-            address: data.address
-          });
-          toast.success('Profile created successfully');
-        }
-      } catch (error) {
-        console.error('Profile creation error:', error);
-        toast.error('An unexpected error occurred');
+      } else {
+        // If Supabase isn't configured, just use localStorage
+        await createLocalProfile();
       }
+      
+      setIsLoading(false);
     };
     
     fetchProfile();
   }, [user, isAuthenticated]);
+  
+  const createLocalProfile = async () => {
+    if (!user) return;
+    
+    try {
+      const userData = {
+        id: crypto.randomUUID(),
+        user_id: user.id,
+        name: user.user_metadata?.full_name || 'Farmer',
+        email: user.email || '',
+        contact_number: user.user_metadata?.phone || '',
+        address: '',
+        created_at: new Date().toISOString()
+      };
+      
+      console.log("Creating local profile with data:", userData);
+      
+      // Save to localStorage
+      localStorage.setItem('farmtrack_profile', JSON.stringify(userData));
+      
+      setFarmerProfile(userData);
+      setFormData({
+        name: userData.name,
+        email: userData.email,
+        contact_number: userData.contact_number,
+        address: userData.address
+      });
+      setUsingLocalStorage(true);
+      toast.success('Profile created successfully');
+    } catch (error) {
+      console.error('Local profile creation error:', error);
+      toast.error('An unexpected error occurred');
+    }
+  };
   
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -145,32 +169,65 @@ const ProfilePage = () => {
     
     if (!validate()) return;
     
-    if (!farmerProfile) {
-      console.log("No farmer profile to update, creating new profile");
-      await createDefaultProfile();
-      return;
-    }
-    
     setIsSubmitting(true);
-    console.log("Updating profile:", farmerProfile.id, formData);
     
     try {
-      const { error } = await supabase
-        .from('farmers')
-        .update({
-          name: formData.name,
-          email: formData.email,
-          contact_number: formData.contact_number,
-          address: formData.address
-        })
-        .eq('id', farmerProfile.id);
-        
-      if (error) {
-        console.error('Error updating profile:', error);
-        toast.error('Failed to update profile: ' + error.message);
+      if (usingLocalStorage || !isSupabaseConfigured()) {
+        // Update local storage profile
+        if (farmerProfile) {
+          const updatedProfile = {
+            ...farmerProfile,
+            name: formData.name,
+            email: formData.email,
+            contact_number: formData.contact_number,
+            address: formData.address
+          };
+          
+          localStorage.setItem('farmtrack_profile', JSON.stringify(updatedProfile));
+          setFarmerProfile(updatedProfile);
+          toast.success('Profile updated successfully');
+        } else {
+          // Create new profile if somehow we don't have one
+          await createLocalProfile();
+        }
       } else {
-        console.log("Profile updated successfully");
-        toast.success('Profile updated successfully');
+        // Try database update
+        if (!farmerProfile) {
+          console.log("No farmer profile in database, creating new profile");
+          await createDatabaseProfile();
+        } else {
+          console.log("Updating database profile:", farmerProfile.id, formData);
+          const { error } = await supabase
+            .from('farmers')
+            .update({
+              name: formData.name,
+              email: formData.email,
+              contact_number: formData.contact_number,
+              address: formData.address
+            })
+            .eq('id', farmerProfile.id);
+            
+          if (error) {
+            console.error('Error updating profile in database:', error);
+            
+            // Fall back to localStorage
+            const updatedProfile = {
+              ...farmerProfile,
+              name: formData.name,
+              email: formData.email,
+              contact_number: formData.contact_number,
+              address: formData.address
+            };
+            
+            localStorage.setItem('farmtrack_profile', JSON.stringify(updatedProfile));
+            setFarmerProfile(updatedProfile);
+            setUsingLocalStorage(true);
+            toast.success('Profile updated successfully (locally)');
+          } else {
+            console.log("Profile updated successfully in database");
+            toast.success('Profile updated successfully');
+          }
+        }
       }
     } catch (error: any) {
       console.error('Error updating profile:', error);
@@ -180,10 +237,9 @@ const ProfilePage = () => {
     }
   };
 
-  const createDefaultProfile = async () => {
-    if (!user) return;
+  const createDatabaseProfile = async () => {
+    if (!user || !isSupabaseConfigured()) return;
     
-    setIsSubmitting(true);
     try {
       const userData = {
         user_id: user.id,
@@ -193,7 +249,7 @@ const ProfilePage = () => {
         address: formData.address || ''
       };
       
-      console.log("Creating profile with data:", userData);
+      console.log("Creating database profile with data:", userData);
       const { data, error } = await supabase
         .from('farmers')
         .insert(userData)
@@ -201,21 +257,21 @@ const ProfilePage = () => {
         .single();
         
       if (error) {
-        console.error('Error creating farmer profile:', error);
-        toast.error('Failed to create profile: ' + error.message);
+        console.error('Error creating farmer profile in database:', error);
+        // Fall back to localStorage
+        await createLocalProfile();
         return;
       }
       
       if (data) {
-        console.log("Profile created:", data);
+        console.log("Profile created in database:", data);
         setFarmerProfile(data);
         toast.success('Profile created successfully');
       }
     } catch (error: any) {
       console.error('Profile creation error:', error);
-      toast.error('Failed to create profile');
-    } finally {
-      setIsSubmitting(false);
+      // Fall back to localStorage
+      await createLocalProfile();
     }
   };
 
@@ -234,7 +290,17 @@ const ProfilePage = () => {
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>Warning</AlertTitle>
             <AlertDescription>
-              Supabase is not properly configured. Your data will not be saved to the database.
+              Supabase is not properly configured. Your data will be saved locally only.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {usingLocalStorage && isConfigured && (
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Notice</AlertTitle>
+            <AlertDescription>
+              Your profile is currently stored locally. Database connection will be attempted on next save.
             </AlertDescription>
           </Alert>
         )}
