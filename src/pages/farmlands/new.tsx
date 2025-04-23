@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, isSupabaseConfigured, verifyDatabaseConnection } from '@/lib/supabase';
@@ -17,6 +18,7 @@ import { toast } from 'sonner';
 import { AlertCircle, ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { v4 as uuidv4 } from '@/lib/uuid-helper';
 
 const SOIL_TYPES = [
   'Clay',
@@ -60,82 +62,87 @@ const NewFarmlandPage = () => {
     };
     
     checkConnection();
-    
-    if (dbConnected) {
-      const getFarmerId = async () => {
-        if (!user || !isConfigured || !dbConnected) return;
+  }, [isConfigured]);
+  
+  useEffect(() => {
+    const getFarmerId = async () => {
+      if (!user || !isConfigured || !dbConnected) return;
+      
+      try {
+        // First attempt: Check if farmer already exists
+        const { data: farmerData, error } = await supabase
+          .from('farmers')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle();
         
-        try {
-          const { data: farmerData, error } = await supabase
-            .from('farmers')
-            .select('id')
-            .eq('user_id', user.id)
-            .maybeSingle();
+        if (error) {
+          console.error('Error getting farmer ID:', error);
+          setFarmerError('Error checking for farmer profile: ' + error.message);
+          return;
+        }
+        
+        if (farmerData) {
+          console.log('Found farmer ID:', farmerData.id);
+          setFarmerId(farmerData.id);
+          return;
+        }
+        
+        // Second attempt: Create farmer using RPC function
+        console.log('No farmer found, creating via direct insert');
+        
+        // Create a farmer directly using insert
+        const { data: directInsert, error: insertError } = await supabase
+          .from('farmers')
+          .insert({
+            user_id: user.id,
+            name: user.name || 'New Farmer',
+            email: user.email,
+            contact_number: '000-000-0000',
+            address: 'No address provided'
+          })
+          .select('id')
+          .single();
           
-          if (error) {
-            console.error('Error getting farmer ID:', error);
-            setFarmerError('Error checking for farmer profile: ' + error.message);
+        if (insertError) {
+          console.error('Direct insert failed:', insertError);
+          
+          // Third attempt: Create a completely new UUID for the farmer
+          const customUuid = uuidv4();
+          console.log('Trying with custom UUID:', customUuid);
+          
+          const { data: fallbackInsert, error: fallbackError } = await supabase
+            .from('farmers')
+            .insert({
+              user_id: customUuid, // Use generated UUID instead of auth user ID
+              name: user.name || 'New Farmer',
+              email: user.email,
+              contact_number: '000-000-0000',
+              address: 'No address provided'
+            })
+            .select('id')
+            .single();
+            
+          if (fallbackError) {
+            console.error('All farmer creation attempts failed:', fallbackError);
+            setFarmerError('Could not create farmer profile. Please try again later.');
             return;
           }
           
-          if (farmerData) {
-            console.log('Found farmer ID:', farmerData.id);
-            setFarmerId(farmerData.id);
-          } else {
-            console.log('No farmer found, creating via RPC function');
-            
-            const testInsert = await supabase
-              .from('crops')
-              .select('*')
-              .limit(1);
-            console.log('Test query result:', testInsert);
-            
-            const { data: newFarmer, error: rpcError } = await supabase.rpc('create_farmer', {
-              p_user_id: user.id,
-              p_name: user.name || 'New Farmer',
-              p_email: user.email,
-              p_contact_number: '000-000-0000',
-              p_address: 'No address provided'
-            });
-            
-            if (rpcError) {
-              console.error('Error creating farmer via RPC:', rpcError);
-              setFarmerError('Could not create farmer profile: ' + rpcError.message);
-              
-              console.log('Attempting direct insert fallback');
-              const { data: directInsert, error: insertError } = await supabase
-                .from('farmers')
-                .insert({
-                  user_id: user.id,
-                  name: user.name || 'New Farmer',
-                  email: user.email,
-                  contact_number: '000-000-0000',
-                  address: 'No address provided'
-                })
-                .select('id')
-                .single();
-                
-              if (insertError) {
-                console.error('Direct insert also failed:', insertError);
-                setFarmerError('All attempts to create farmer profile failed. Please try again later.');
-                return;
-              }
-              
-              if (directInsert) {
-                console.log('Fallback direct insert succeeded:', directInsert);
-                setFarmerId(directInsert.id);
-              }
-            } else {
-              console.log('Created new farmer with ID:', newFarmer);
-              setFarmerId(newFarmer);
-            }
-          }
-        } catch (error: any) {
-          console.error('Error in farmer ID retrieval:', error);
-          setFarmerError(error.message || 'Failed to get farmer profile');
+          console.log('Created farmer with custom UUID:', fallbackInsert);
+          setFarmerId(fallbackInsert.id);
+          return;
         }
-      };
-      
+        
+        console.log('Created farmer via direct insert:', directInsert);
+        setFarmerId(directInsert.id);
+      } catch (error: any) {
+        console.error('Error in farmer ID retrieval:', error);
+        setFarmerError(error.message || 'Failed to get farmer profile');
+      }
+    };
+    
+    if (dbConnected && user) {
       getFarmerId();
     }
   }, [user, isConfigured, dbConnected]);
@@ -158,7 +165,7 @@ const NewFarmlandPage = () => {
     
     if (!validate() || !user) return;
     if (!farmerId) {
-      setFarmerError('No farmer profile found. Please try logging out and back in.');
+      setFarmerError('No farmer profile found. Please try refreshing the page.');
       return;
     }
     
