@@ -25,6 +25,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     const getSession = async () => {
       if (!isConfigured) {
+        console.warn('Supabase is not configured. Please check your environment variables.');
         setLoading(false);
         return;
       }
