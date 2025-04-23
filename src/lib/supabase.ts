@@ -50,6 +50,7 @@ export const isSupabaseConfigured = () => {
 // Helper function to verify database connectivity by adding test data
 export const verifyDatabaseConnection = async (): Promise<boolean> => {
   try {
+    console.log('Testing database connectivity...');
     // Try to read from crops table which has public access
     const { data, error } = await supabase
       .from('crops')

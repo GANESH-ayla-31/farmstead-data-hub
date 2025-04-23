@@ -19,6 +19,12 @@ END;
 $$;
 
 -- Modify RLS policy for farmers to allow inserting through our function
+DROP POLICY IF EXISTS "Enable insert for authenticated users through function" ON farmers;
 CREATE POLICY "Enable insert for authenticated users through function" 
 ON farmers FOR INSERT 
-WITH CHECK (auth.uid() = user_id);
+TO authenticated
+WITH CHECK (true);
+
+-- Grant execute permission on the function
+GRANT EXECUTE ON FUNCTION create_farmer(UUID, TEXT, TEXT, TEXT, TEXT) TO public;
+

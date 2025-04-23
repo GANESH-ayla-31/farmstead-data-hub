@@ -79,6 +79,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (!isConfigured) return null;
 
     try {
+      console.log('Checking for farmer with user_id:', userId);
       // First check if the farmer exists
       const { data: existingFarmer, error: checkError } = await supabase
         .from('farmers')
@@ -96,21 +97,46 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return existingFarmer.id;
       }
 
-      // If not exists, create directly through SQL to bypass RLS
-      const { data, error } = await supabase.rpc('create_farmer', {
+      console.log('No existing farmer found, creating one via RPC...');
+      
+      // Try using RPC function first
+      const { data: rpcResult, error: rpcError } = await supabase.rpc('create_farmer', {
         p_user_id: userId,
         p_name: name,
         p_email: email,
         p_contact_number: '000-000-0000',
         p_address: 'No address provided'
       });
-
-      if (error) {
-        throw error;
+      
+      if (rpcError) {
+        console.error('RPC error creating farmer:', rpcError);
+        
+        // Fallback to direct insert
+        console.log('Falling back to direct insert');
+        const { data: insertResult, error: insertError } = await supabase
+          .from('farmers')
+          .insert({
+            user_id: userId,
+            name: name,
+            email: email,
+            contact_number: '000-000-0000',
+            address: 'No address provided'
+          })
+          .select('id')
+          .single();
+          
+        if (insertError) {
+          console.error('Direct insert also failed:', insertError);
+          toast.error('Failed to create farmer profile');
+          throw insertError;
+        }
+        
+        console.log('Farmer created via direct insert:', insertResult);
+        return insertResult.id;
       }
-
-      console.log('Farmer created successfully:', data);
-      return data;
+      
+      console.log('Farmer created successfully via RPC:', rpcResult);
+      return rpcResult;
     } catch (error) {
       console.error('Error creating or getting farmer:', error);
       toast.error('Failed to create farmer profile');
