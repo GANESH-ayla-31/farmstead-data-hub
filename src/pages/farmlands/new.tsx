@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, isSupabaseConfigured, verifyDatabaseConnection } from '@/lib/supabase';
@@ -47,13 +46,19 @@ const NewFarmlandPage = () => {
   const [farmerId, setFarmerId] = useState<string | null>(null);
   const [dbConnected, setDbConnected] = useState<boolean>(false);
   const [creatingFarmer, setCreatingFarmer] = useState<boolean>(false);
+  const [debug, setDebug] = useState<string[]>([]);
 
   useEffect(() => {
+    const logDebug = (message: string) => {
+      console.log(message);
+      setDebug(prev => [...prev, message]);
+    };
+
     const checkConnection = async () => {
       if (!isConfigured) return;
       
       const connected = await verifyDatabaseConnection();
-      console.log('Database connection test:', connected);
+      logDebug(`Database connection test: ${connected}`);
       setDbConnected(connected);
       
       if (!connected) {
@@ -66,34 +71,21 @@ const NewFarmlandPage = () => {
   }, [isConfigured]);
   
   useEffect(() => {
-    const getFarmerId = async () => {
-      if (!user || !isConfigured || !dbConnected || creatingFarmer) return;
-      
-      try {
-        setCreatingFarmer(true);
-        
-        // First attempt: Check if farmer already exists
-        console.log('Checking if farmer exists for user:', user.id);
-        const { data: farmerData, error } = await supabase
-          .from('farmers')
-          .select('id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-        
-        if (error) {
-          console.error('Error getting farmer ID:', error);
-        }
-        
-        if (farmerData) {
-          console.log('Found farmer ID:', farmerData.id);
-          setFarmerId(farmerData.id);
-          setCreatingFarmer(false);
-          return;
-        }
+    const logDebug = (message: string) => {
+      console.log(message);
+      setDebug(prev => [...prev, message]);
+    };
 
-        // Second attempt: Try direct insert without foreign key constraint
-        console.log('No farmer found, creating via direct insert');
-        const { data: insertedFarmer, error: insertError } = await supabase
+    const createFarmerDirectly = async () => {
+      if (!user) {
+        logDebug("No user found");
+        return null;
+      }
+
+      try {
+        logDebug(`Attempting direct insert for user_id: ${user.id}`);
+        
+        const { data, error } = await supabase
           .from('farmers')
           .insert({
             user_id: user.id,
@@ -105,23 +97,32 @@ const NewFarmlandPage = () => {
           .select('id')
           .single();
         
-        if (!insertError && insertedFarmer) {
-          console.log('Created farmer via direct insert:', insertedFarmer);
-          setFarmerId(insertedFarmer.id);
-          setCreatingFarmer(false);
-          return;
+        if (error) {
+          logDebug(`Direct insert error: ${error.message}`);
+          return null;
         }
         
-        console.error('Direct insert failed:', insertError);
+        if (data) {
+          logDebug(`Direct insert succeeded with ID: ${data.id}`);
+          return data.id;
+        }
+      } catch (e: any) {
+        logDebug(`Direct insert exception: ${e.message}`);
+      }
+      return null;
+    };
 
-        // Third attempt: Try with a custom UUID
+    const createFarmerWithCustomUuid = async () => {
+      if (!user) return null;
+      
+      try {
         const customUuid = uuidv4();
-        console.log('Trying with custom UUID:', customUuid);
+        logDebug(`Attempting with custom UUID: ${customUuid}`);
         
-        const { data: fallbackInsert, error: fallbackError } = await supabase
+        const { data, error } = await supabase
           .from('farmers')
           .insert({
-            user_id: customUuid, // Use generated UUID instead of auth user ID
+            user_id: customUuid,
             name: user.name || 'New Farmer',
             email: user.email,
             contact_number: '000-000-0000',
@@ -130,16 +131,28 @@ const NewFarmlandPage = () => {
           .select('id')
           .single();
         
-        if (!fallbackError && fallbackInsert) {
-          console.log('Created farmer with custom UUID:', fallbackInsert);
-          setFarmerId(fallbackInsert.id);
-          setCreatingFarmer(false);
-          return;
+        if (error) {
+          logDebug(`Custom UUID error: ${error.message}`);
+          return null;
         }
         
-        // Fourth attempt: Try using the RPC function
-        console.log('Trying with RPC function');
-        const { data: rpcResult, error: rpcError } = await supabase
+        if (data) {
+          logDebug(`Custom UUID insert succeeded with ID: ${data.id}`);
+          return data.id;
+        }
+      } catch (e: any) {
+        logDebug(`Custom UUID exception: ${e.message}`);
+      }
+      return null;
+    };
+
+    const createFarmerWithRPC = async () => {
+      if (!user) return null;
+      
+      try {
+        logDebug(`Attempting with RPC function`);
+        
+        const { data, error } = await supabase
           .rpc('create_farmer', {
             p_user_id: user.id,
             p_name: user.name || 'New Farmer',
@@ -148,18 +161,123 @@ const NewFarmlandPage = () => {
             p_address: 'No address provided'
           });
         
-        if (!rpcError && rpcResult) {
-          console.log('Created farmer via RPC:', rpcResult);
-          setFarmerId(rpcResult);
-          setCreatingFarmer(false);
+        if (error) {
+          logDebug(`RPC error: ${error.message}`);
+          
+          const { data: flexData, error: flexError } = await supabase
+            .rpc('create_farmer_flexible', {
+              p_address: 'No address provided',
+              p_contact_number: '000-000-0000',
+              p_email: user.email,
+              p_name: user.name || 'New Farmer',
+              p_user_id: user.id
+            });
+            
+          if (flexError) {
+            logDebug(`Flexible RPC error: ${flexError.message}`);
+            return null;
+          }
+          
+          if (flexData) {
+            logDebug(`Flexible RPC succeeded with ID: ${flexData}`);
+            return flexData;
+          }
+          
+          return null;
+        }
+        
+        if (data) {
+          logDebug(`RPC succeeded with ID: ${data}`);
+          return data;
+        }
+      } catch (e: any) {
+        logDebug(`RPC exception: ${e.message}`);
+      }
+      return null;
+    };
+    
+    const createFarmerWithSQL = async () => {
+      if (!user) return null;
+      
+      try {
+        logDebug(`Attempting with raw SQL`);
+        
+        const { data, error } = await supabase
+          .from('farmers')
+          .insert({
+            user_id: user.id,
+            name: user.name || 'New Farmer',
+            email: user.email,
+            contact_number: '000-000-0000',
+            address: 'No address provided'
+          })
+          .select('id')
+          .single();
+          
+        if (error) {
+          logDebug(`SQL error: ${error.message}`);
+          return null;
+        }
+        
+        if (data) {
+          logDebug(`SQL succeeded with ID: ${data.id}`);
+          return data.id;
+        }
+      } catch (e: any) {
+        logDebug(`SQL exception: ${e.message}`);
+      }
+      return null;
+    };
+
+    const getFarmerId = async () => {
+      if (!user || !isConfigured || !dbConnected || creatingFarmer) return;
+      
+      try {
+        setCreatingFarmer(true);
+        
+        logDebug('Checking if farmer exists for user: ' + user.id);
+        const { data: farmerData, error } = await supabase
+          .from('farmers')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        
+        if (error) {
+          logDebug(`Error checking for farmer: ${error.message}`);
+        }
+        
+        if (farmerData) {
+          logDebug(`Found existing farmer ID: ${farmerData.id}`);
+          setFarmerId(farmerData.id);
           return;
         }
-
-        console.error('All farmer creation attempts failed:', rpcError || fallbackError);
-        setFarmerError('Could not create farmer profile. Please try again later.');
+        
+        logDebug('No farmer found, attempting to create one...');
+        
+        let newFarmerId = await createFarmerDirectly();
+        
+        if (!newFarmerId) {
+          newFarmerId = await createFarmerWithCustomUuid();
+        }
+        
+        if (!newFarmerId) {
+          newFarmerId = await createFarmerWithRPC();
+        }
+        
+        if (!newFarmerId) {
+          newFarmerId = await createFarmerWithSQL();
+        }
+        
+        if (newFarmerId) {
+          logDebug(`Successfully created farmer with ID: ${newFarmerId}`);
+          setFarmerId(newFarmerId);
+        } else {
+          logDebug('All farmer creation attempts failed');
+          setFarmerError('Could not create farmer profile. Please try again later.');
+        }
       } catch (error: any) {
-        console.error('Error in farmer ID retrieval:', error);
-        setFarmerError(error.message || 'Failed to get farmer profile');
+        logDebug(`Error in farmer creation process: ${error.message}`);
+        setFarmerError(error.message || 'Failed to create farmer profile');
       } finally {
         setCreatingFarmer(false);
       }
@@ -258,6 +376,21 @@ const NewFarmlandPage = () => {
             <AlertTitle>Error</AlertTitle>
             <AlertDescription>{farmerError}</AlertDescription>
           </Alert>
+        )}
+
+        {debug.length > 0 && (
+          <Card className="bg-muted">
+            <CardHeader>
+              <CardTitle className="text-sm">Debug Information</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-xs font-mono overflow-auto max-h-40">
+                {debug.map((msg, i) => (
+                  <div key={i}>{msg}</div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         <Card>

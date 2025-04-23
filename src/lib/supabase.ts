@@ -23,6 +23,11 @@ export const supabase = createClient<Database>(
       persistSession: true,
       autoRefreshToken: true,
     },
+    global: {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    },
     db: {
       schema: 'public',
     },
@@ -39,7 +44,7 @@ export const isSupabaseConfigured = () => {
   );
   
   if (isConfigured) {
-    console.log('Supabase connection is properly configured.');
+    console.log('Supabase connection is properly configured:', supabaseUrl);
   } else {
     console.warn('Supabase connection is not properly configured. Some features may not work.');
   }
@@ -51,7 +56,8 @@ export const isSupabaseConfigured = () => {
 export const verifyDatabaseConnection = async (): Promise<boolean> => {
   try {
     console.log('Testing database connectivity...');
-    // Try to read from crops table which has public access
+
+    // First, try a simple query to the crops table which should have public access
     const { data, error } = await supabase
       .from('crops')
       .select('name')
