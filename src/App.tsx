@@ -11,6 +11,8 @@ import Register from "./pages/auth/Register";
 import NotFound from "./pages/NotFound";
 import FarmlandsPage from "./pages/farmlands";
 import NewFarmlandPage from "./pages/farmlands/new";
+import CropsPage from "./pages/crops";
+import NewCropPage from "./pages/crops/new";
 import ProfilePage from "./pages/profile";
 
 const queryClient = new QueryClient();
@@ -33,6 +35,10 @@ const App = () => (
             {/* Farmland Routes */}
             <Route path="/farmlands" element={<FarmlandsPage />} />
             <Route path="/farmlands/new" element={<NewFarmlandPage />} />
+            
+            {/* Crop Routes */}
+            <Route path="/crops" element={<CropsPage />} />
+            <Route path="/crops/new" element={<NewCropPage />} />
             
             {/* Profile Routes */}
             <Route path="/profile" element={<ProfilePage />} />
